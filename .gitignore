@@ -1,0 +1,10 @@
+.env
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+.terraform.tfstate.lock.info
+backend.hcl
+!backend.hcl.example
+.DS_Store

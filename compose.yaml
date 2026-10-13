@@ -1,0 +1,198 @@
+# Local development environment for the whole platform.
+#
+#   docker compose up -d                          # infrastructure only (DBs, LocalStack, Mailpit)
+#   docker compose --profile apps up -d --build   # infrastructure + all services + frontend
+#
+# Each application is built from its own sibling repository. Override a build
+# context with e.g. AUTH_SERVICE_PATH=/path/to/ecommerce-auth-service.
+# Credentials here are LOCAL-ONLY development values. Never reuse them anywhere else.
+
+name: ecommerce
+
+x-service-defaults: &service-defaults
+  profiles: ["apps"]
+  restart: unless-stopped
+  environment: &common-env
+    NODE_ENV: development
+    LOG_LEVEL: info
+    AWS_REGION: us-east-1
+    AWS_ENDPOINT_URL: http://localstack:4566
+    AWS_ACCESS_KEY_ID: test
+    AWS_SECRET_ACCESS_KEY: test
+    MESSAGING_ENV_PREFIX: local-ecommerce
+    JWT_ISSUER: ecommerce-auth-service
+    JWT_AUDIENCE: ecommerce-api
+    JWKS_URL: http://auth-service:4001/.well-known/jwks.json
+    CORS_ALLOWED_ORIGINS: http://localhost:5173
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_local_admin
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./local/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo:
+    image: mongo:8
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: mongo_local_admin
+    ports: ["27017:27017"]
+    volumes:
+      - mongo-data:/data/db
+      - ./local/mongo/init.js:/docker-entrypoint-initdb.d/01-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  localstack:
+    # 4.14 is the last 4.x release. Newer calendar-versioned images may need
+    # LOCALSTACK_AUTH_TOKEN. See docs/architecture/local-development.md.
+    image: localstack/localstack:4.14
+    environment:
+      SERVICES: sns,sqs,sts,iam
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}
+    ports: ["4566:4566"]
+    volumes:
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:4566/_localstack/health | grep -q '\"sqs\": \"\\(running\\|available\\)\"'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.31
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  auth-service:
+    <<: *service-defaults
+    build: ${AUTH_SERVICE_PATH:-../ecommerce-auth-service}
+    ports: ["4001:4001"]
+    environment:
+      <<: *common-env
+      PORT: 4001
+      DATABASE_URL: postgresql://auth_svc:auth_local_pw@postgres:5432/auth_db
+      NOTIFICATION_SERVICE_URL: http://notification-service:4006
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  product-service:
+    <<: *service-defaults
+    build: ${PRODUCT_SERVICE_PATH:-../ecommerce-product-service}
+    ports: ["4002:4002"]
+    environment:
+      <<: *common-env
+      PORT: 4002
+      DATABASE_URL: postgresql+psycopg://product_svc:product_local_pw@postgres:5432/product_db
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  inventory-service:
+    <<: *service-defaults
+    build: ${INVENTORY_SERVICE_PATH:-../ecommerce-inventory-service}
+    ports: ["4003:4003"]
+    environment:
+      <<: *common-env
+      PORT: 4003
+      DATABASE_URL: postgresql://inventory_svc:inventory_local_pw@postgres:5432/inventory_db
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  order-service:
+    <<: *service-defaults
+    build: ${ORDER_SERVICE_PATH:-../ecommerce-order-service}
+    ports: ["4004:4004"]
+    environment:
+      <<: *common-env
+      PORT: 4004
+      MONGODB_URI: mongodb://order_svc:order_local_pw@mongo:27017/order_db?authSource=order_db
+      PRODUCT_SERVICE_URL: http://product-service:4002
+    depends_on:
+      mongo: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  payment-service:
+    <<: *service-defaults
+    build: ${PAYMENT_SERVICE_PATH:-../ecommerce-payment-service}
+    ports: ["4005:4005"]
+    environment:
+      <<: *common-env
+      PORT: 4005
+      DATABASE_URL: postgresql://payment_svc:payment_local_pw@postgres:5432/payment_db
+      ORDER_SERVICE_URL: http://order-service:4004
+      PAYMENT_PROVIDER: mock
+      PUBLIC_BASE_URL: http://localhost:4005
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  notification-service:
+    <<: *service-defaults
+    build: ${NOTIFICATION_SERVICE_PATH:-../ecommerce-notification-service}
+    ports: ["4006:4006"]
+    environment:
+      <<: *common-env
+      PORT: 4006
+      DATABASE_URL: postgresql://notification_svc:notification_local_pw@postgres:5432/notification_db
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMS_PROVIDER: console
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+      mailpit: { condition: service_healthy }
+
+  saga-orchestrator:
+    <<: *service-defaults
+    build: ${SAGA_ORCHESTRATOR_PATH:-../ecommerce-saga-orchestrator}
+    ports: ["4007:4007"]
+    environment:
+      <<: *common-env
+      PORT: 4007
+      DATABASE_URL: postgresql://saga_svc:saga_local_pw@postgres:5432/saga_db
+      ORDER_SERVICE_URL: http://order-service:4004
+      PAYMENT_SERVICE_URL: http://payment-service:4005
+    depends_on:
+      postgres: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+
+  frontend:
+    profiles: ["apps"]
+    restart: unless-stopped
+    build:
+      context: ${FRONTEND_PATH:-../ecommerce-frontend}
+      args:
+        VITE_AUTH_API_URL: http://localhost:4001
+        VITE_PRODUCT_API_URL: http://localhost:4002
+        VITE_INVENTORY_API_URL: http://localhost:4003
+        VITE_ORDER_API_URL: http://localhost:4004
+        VITE_PAYMENT_API_URL: http://localhost:4005
+        VITE_NOTIFICATION_API_URL: http://localhost:4006
+        VITE_SAGA_API_URL: http://localhost:4007
+    ports: ["5173:8080"]
+
+volumes:
+  postgres-data:
+  mongo-data:
+  localstack-data:

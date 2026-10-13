@@ -1,0 +1,6 @@
+# Copy to backend.hcl (git-ignored). One state bucket per AWS account; one key per environment.
+bucket       = "REPLACE-ME-ecommerce-terraform-state-staging"
+key          = "ecommerce/staging/terraform.tfstate"
+region       = "ap-south-1"
+encrypt      = true
+use_lockfile = true

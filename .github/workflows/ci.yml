@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        root:
+          - terraform/modules/messaging
+          - terraform/environments/local
+          - terraform/environments/dev
+          - terraform/environments/staging
+          - terraform/environments/prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.2
+      - name: Format
+        run: terraform fmt -check -recursive
+        working-directory: terraform
+      - name: Init (no backend, no AWS credentials)
+        run: terraform init -backend=false -input=false
+        working-directory: ${{ matrix.root }}
+      - name: Validate
+        run: terraform validate
+        working-directory: ${{ matrix.root }}
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose file
+        run: docker compose --profile apps config --quiet
