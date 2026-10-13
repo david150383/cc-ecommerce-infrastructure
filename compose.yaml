@@ -51,10 +51,12 @@ services:
       - mongo-data:/data/db
       - ./local/mongo/init.js:/docker-entrypoint-initdb.d/01-init.js:ro
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
+      # mongosh is a Node.js program and can take several seconds to start on a busy machine.
+      test: ["CMD", "mongosh", "--quiet", "--norc", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 15s
+      start_period: 30s
+      retries: 10
 
   localstack:
     # 4.14 is the last 4.x release. Newer calendar-versioned images may need

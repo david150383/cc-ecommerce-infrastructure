@@ -8,3 +8,5 @@ crash.log
 backend.hcl
 !backend.hcl.example
 .DS_Store
+# Lock files belong to root configurations (environments/*), not reusable modules.
+terraform/modules/**/.terraform.lock.hcl
