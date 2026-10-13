@@ -62,12 +62,25 @@ This proves the service is independently runnable.
 | PostgreSQL | `localhost:5432` (per-service users, see `local/postgres/init.sql`) |
 | MongoDB | `localhost:27017` |
 
-## Messaging resources (Phase 3)
+## Messaging resources
 
 ```bash
 cd terraform/environments/local
 terraform init
-terraform apply      # creates topics/queues inside LocalStack only
+terraform apply      # creates topics/queues inside LocalStack only (32 resources)
+cd ../../..
+scripts/verify-local-messaging.sh   # publishes sample events, checks filter-policy routing
+```
+
+LocalStack keeps state in the `localstack-data` volume. After `docker compose down -v`,
+delete `terraform/environments/local/terraform.tfstate` and apply again.
+
+Inspect queues by hand:
+
+```bash
+export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
+aws --endpoint-url http://localhost:4566 sqs list-queues
+aws --endpoint-url http://localhost:4566 sns list-subscriptions
 ```
 
 ## LocalStack versions
@@ -75,6 +88,16 @@ terraform apply      # creates topics/queues inside LocalStack only
 The compose file pins `localstack/localstack:4.14`, the last 4.x release. If you
 move to a calendar-versioned image (`2026.x`), create a free LocalStack account
 and set `LOCALSTACK_AUTH_TOKEN` in `.env`.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `docker build` hangs at `resolve image config for docker/dockerfile:1` | BuildKit can stall fetching the syntax frontend through Docker Desktop's proxy. Our Dockerfiles intentionally have no `# syntax=` line |
+| `npm ci` fails in Docker with `Missing: ... from lock file` | Lockfile generated on macOS lacks Linux-only optional deps. Delete `node_modules` and `package-lock.json`, run `npm install`, and verify with `docker run --rm -v "$PWD:/app" -w /app node:24-alpine npm ci --ignore-scripts` |
+| Mongo stays `health: starting` | `mongosh` is slow to start under load; the healthcheck allows 15s plus a 30s start period |
+| Published events don't appear in a queue immediately | SNS → SQS delivery is asynchronous. Long-poll (`--wait-time-seconds`) instead of reading once |
+| `no space left on device` | Docker build cache grows without bound: `docker builder prune` |
 
 ## Resetting
 

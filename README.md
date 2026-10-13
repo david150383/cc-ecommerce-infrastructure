@@ -11,6 +11,7 @@ platform. This repository contains **no application code**.
 | [`terraform/modules/messaging`](terraform/modules/messaging) | SNS topics, SQS queues, DLQs, subscriptions, queue policies, per-service IAM documents, alarms |
 | [`terraform/environments/`](terraform/environments) | `local` (LocalStack), `dev`, `staging`, `prod`: isolated state per environment |
 | [`scripts/create-github-repos.sh`](scripts/create-github-repos.sh) | Creates and pushes the independent GitHub repositories |
+| [`scripts/verify-local-messaging.sh`](scripts/verify-local-messaging.sh) | End-to-end check of SNS → SQS routing in LocalStack |
 
 ## Quick start
 
