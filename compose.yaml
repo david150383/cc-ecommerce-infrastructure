@@ -85,18 +85,43 @@ services:
       timeout: 3s
       retries: 20
 
+  # One-off migration job: applies pending Prisma migrations, then exits.
+  auth-migrate:
+    profiles: ["apps"]
+    build:
+      context: ${AUTH_SERVICE_PATH:-../ecommerce-auth-service}
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://auth_svc:auth_local_pw@postgres:5432/auth_db
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
   auth-service:
     <<: *service-defaults
-    build: ${AUTH_SERVICE_PATH:-../ecommerce-auth-service}
+    build:
+      context: ${AUTH_SERVICE_PATH:-../ecommerce-auth-service}
+      target: runtime
     ports: ["4001:4001"]
     environment:
       <<: *common-env
       PORT: 4001
       DATABASE_URL: postgresql://auth_svc:auth_local_pw@postgres:5432/auth_db
+      # Local only: a signing key is generated on first start and kept in the volume.
+      JWT_KEYS_DIR: /app/keys
+      FRONTEND_BASE_URL: http://localhost:5173
+      # Until the Notification Service exists (Phase 4), emails go straight to Mailpit.
+      NOTIFICATION_DELIVERY: smtp-dev
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
       NOTIFICATION_SERVICE_URL: http://notification-service:4006
+      # Browsers treat http://localhost as a secure context, so Secure cookies work locally.
+      COOKIE_SECURE: "true"
+    volumes:
+      - auth-keys:/app/keys
     depends_on:
-      postgres: { condition: service_healthy }
-      localstack: { condition: service_healthy }
+      auth-migrate: { condition: service_completed_successfully }
+      mailpit: { condition: service_healthy }
 
   product-service:
     <<: *service-defaults
@@ -195,6 +220,7 @@ services:
     ports: ["5173:8080"]
 
 volumes:
+  auth-keys:
   postgres-data:
   mongo-data:
   localstack-data:
