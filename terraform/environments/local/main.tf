@@ -47,3 +47,4 @@ module "messaging" {
 
 output "topic_arns" { value = module.messaging.topic_arns }
 output "queue_urls" { value = module.messaging.queue_urls }
+output "queue_names" { value = module.messaging.queue_names }

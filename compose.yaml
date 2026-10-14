@@ -242,7 +242,7 @@ services:
       COUPONS: '[{"code":"WELCOME10","percentBps":1000,"maxDiscountMinor":50000}]'
       MESSAGING_ENABLED: "true"
       EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:local-ecommerce-order-events
-      COMMANDS_QUEUE_NAME: local-ecommerce-order-commands
+      COMMANDS_QUEUE_NAME: local-ecommerce-order-commands.fifo
     depends_on:
       order-migrate: { condition: service_completed_successfully }
       messaging-init: { condition: service_completed_successfully }

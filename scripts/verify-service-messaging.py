@@ -15,6 +15,7 @@ def aws(*args):
     return json.loads(out) if out.strip() else {}
 
 def queue(name):  # by name; the URL host "floci" only resolves inside Docker
+    name = "order-commands.fifo" if name == "order-commands" else name.replace("order-commands-dlq", "order-commands-dlq.fifo")
     return f"http://localhost:4566/000000000000/local-ecommerce-{name}"
 
 def purge(name):
@@ -43,8 +44,9 @@ def command(qname, mtype, payload, saga_id, key):
     env = {"messageId": str(uuid.uuid4()), "messageKind": "command", "messageType": mtype, "messageVersion": 1,
            "producer": "ecommerce-saga-orchestrator", "occurredAt": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
            "correlationId": saga_id, "causationId": None, "sagaId": saga_id, "idempotencyKey": key, "payload": payload}
+    fifo = ["--message-group-id", payload["orderId"], "--message-deduplication-id", env["messageId"]] if qname == "order-commands" else []
     aws("sqs", "send-message", "--queue-url", queue(qname), "--message-body", json.dumps(env),
-        "--message-attributes", json.dumps({"messageType": {"DataType": "String", "StringValue": mtype}}))
+        "--message-attributes", json.dumps({"messageType": {"DataType": "String", "StringValue": mtype}}), *fifo)
     return env
 
 def ok(n, text, cond):
@@ -87,13 +89,12 @@ ok(4, "re-sent reserve command: answered again, same reservation (no double rese
 
 # 5. order transitions over SQS -> OrderConfirmed in saga-inbox AND notification-inbox
 for st in ["INVENTORY_RESERVING", "INVENTORY_RESERVED", "PAYMENT_PENDING", "PAYMENT_SUCCEEDED"]:
+    # Sent back to back with no waiting: the FIFO queue delivers one order's commands in send order.
     command("order-commands", "OrderStatusTransitionRequested", {"orderId": oid, "toStatus": st, "reason": "manual saga"}, saga_id, f"{saga_id}:{st}")
-    time.sleep(0.3)  # commands on a standard queue are not ordered; the real saga waits for each result
 command("inventory-commands", "InventoryReservationConfirmRequested", {"reservationId": rid, "orderId": oid}, saga_id, f"{saga_id}:confirm")
 inv = receive("saga-inbox", lambda g: any(m["messageType"] == "InventoryReservationConfirmed" for m in g))
 ok(5, "confirm command → InventoryReservationConfirmed in saga-inbox", any(m["messageType"] == "InventoryReservationConfirmed" for m in inv))
 
-time.sleep(2)
 command("order-commands", "OrderStatusTransitionRequested", {"orderId": oid, "toStatus": "CONFIRMED", "reason": "manual saga"}, saga_id, f"{saga_id}:CONFIRMED")
 conf = receive("saga-inbox", lambda g: any(m["messageType"] == "OrderConfirmed" for m in g))
 note = receive("notification-inbox", lambda g: any(m["messageType"] == "OrderConfirmed" for m in g))

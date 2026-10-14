@@ -36,7 +36,7 @@ unrelated services start acting on requests meant for someone else.
 | Queue | Consumer | Commands | Sent by |
 |---|---|---|---|
 | `inventory-commands` | Inventory | `InventoryReservationRequested`, `InventoryReservationConfirmRequested`, `InventoryReservationReleaseRequested` | Saga |
-| `order-commands` | Order | `OrderStatusTransitionRequested` | Saga |
+| `order-commands.fifo` | Order | `OrderStatusTransitionRequested` (FIFO, `MessageGroupId` = orderId) | Saga |
 | `payment-commands` | Payment | `RefundRequested` | Saga |
 | `notification-commands` | Notification | `NotificationRequested` | Saga, Order, Payment |
 
@@ -50,6 +50,24 @@ unrelated services start acting on requests meant for someone else.
 Subscriptions use **raw message delivery**, so the SQS body is exactly the
 envelope JSON (no SNS wrapper). `messageType` is also sent as an SNS message
 attribute, so filter policies can match on it.
+
+## Why order-commands is FIFO
+
+The saga sends a series of status transitions for one order (`INVENTORY_RESERVING`, `INVENTORY_RESERVED`,
+`PAYMENT_PENDING`, …). A standard queue may deliver them out of order, and the Order state machine would
+(rightly) reject `PAYMENT_PENDING` arriving before `INVENTORY_RESERVED`. A FIFO queue with
+`MessageGroupId = orderId` delivers one order's commands strictly in send order, while different orders are
+still processed in parallel. `MessageDeduplicationId = messageId` makes an accidental double send within five
+minutes enqueue only once; content-based deduplication stays off so a deliberate re-send (same body, new
+`messageId`) is not dropped.
+
+Caveats that come with FIFO:
+- **A failing message blocks its group** until it succeeds or reaches the DLQ. That is what we want for one
+  order's lifecycle, and why invalid transitions are acknowledged instead of retried.
+- **The producer must send in order.** The saga's outbox relay never publishes a saga's message while an
+  older one of the same saga is unpublished, even across relay instances.
+- **A standard queue cannot be converted to FIFO in place.** Terraform replaces it. In AWS that is a
+  migration: create the FIFO queue, switch producers, let the consumer drain the old queue, then delete it.
 
 ## Queue settings
 

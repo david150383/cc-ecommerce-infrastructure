@@ -8,10 +8,18 @@ locals {
   topics = toset(["auth-events", "order-events", "inventory-events", "payment-events", "saga-events"])
 
   # Command queues: exactly one consumer each; producers SendMessage directly.
+  # order-commands is FIFO: status transitions for one order must arrive in the order they were
+  # sent (MessageGroupId = orderId), or the state machine would reject them. Other command
+  # senders wait for each result before sending the next command, so standard queues suffice.
   command_queues = toset(["inventory-commands", "order-commands", "payment-commands", "notification-commands"])
+  fifo_queues    = toset(["order-commands"])
 
   # Inbox queues: receive events fanned out from topics.
   inbox_queues = toset(["saga-inbox", "notification-inbox"])
+
+  # Physical names: AWS requires FIFO queue (and FIFO DLQ) names to end in ".fifo".
+  queue_name = { for q in setunion(local.command_queues, local.inbox_queues) : q => contains(local.fifo_queues, q) ? "${local.prefix}-${q}.fifo" : "${local.prefix}-${q}" }
+  dlq_name   = { for q in setunion(local.command_queues, local.inbox_queues) : q => contains(local.fifo_queues, q) ? "${local.prefix}-${q}-dlq.fifo" : "${local.prefix}-${q}-dlq" }
 
   # Subscriptions: inbox queue <- topic, filtered on the `messageType` message attribute.
   subscriptions = {
@@ -67,7 +75,8 @@ resource "aws_sns_topic" "this" {
 
 resource "aws_sqs_queue" "dlq" {
   for_each                  = local.all_queues
-  name                      = "${local.prefix}-${each.key}-dlq"
+  name                      = local.dlq_name[each.key]
+  fifo_queue                = contains(local.fifo_queues, each.key) ? true : null
   message_retention_seconds = var.dlq_retention_seconds
   sqs_managed_sse_enabled   = var.kms_key_id == null ? true : null
   kms_master_key_id         = var.kms_key_id
@@ -75,13 +84,17 @@ resource "aws_sqs_queue" "dlq" {
 }
 
 resource "aws_sqs_queue" "main" {
-  for_each                   = local.all_queues
-  name                       = "${local.prefix}-${each.key}"
-  visibility_timeout_seconds = var.visibility_timeout_seconds
-  receive_wait_time_seconds  = 20
-  message_retention_seconds  = var.message_retention_seconds
-  sqs_managed_sse_enabled    = var.kms_key_id == null ? true : null
-  kms_master_key_id          = var.kms_key_id
+  for_each   = local.all_queues
+  name       = local.queue_name[each.key]
+  fifo_queue = contains(local.fifo_queues, each.key) ? true : null
+  # Producers set MessageDeduplicationId = messageId explicitly (exactly-once *enqueue* per message
+  # within 5 minutes); content-based deduplication would wrongly drop a deliberate re-send.
+  content_based_deduplication = contains(local.fifo_queues, each.key) ? false : null
+  visibility_timeout_seconds  = var.visibility_timeout_seconds
+  receive_wait_time_seconds   = 20
+  message_retention_seconds   = var.message_retention_seconds
+  sqs_managed_sse_enabled     = var.kms_key_id == null ? true : null
+  kms_master_key_id           = var.kms_key_id
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq[each.key].arn
     maxReceiveCount     = var.max_receive_count
