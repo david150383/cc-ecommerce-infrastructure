@@ -17,13 +17,17 @@ Tick items only when they have been implemented **and verified**.
 - [ ] CI workflows observed passing on GitHub (needs remotes)
 
 ## Phase 2: Foundational services
-- [ ] Auth: Prisma schema + migrations, register/login/refresh/logout, JWKS, Argon2id, rate limits, audit log
-- [ ] Auth: email verification, password reset, admin users, OpenAPI
-- [ ] Product: SQLAlchemy models, Alembic migrations, CRUD, categories, search/filter/paginate
-- [ ] Inventory: TypeORM entities + migrations, stock CRUD, reservations with row locks, idempotency, audit
-- [ ] Inventory: concurrent-reservation test proving no oversell
-- [ ] Order: Mongoose models, price snapshot via Product, state machine, ownership checks
-- [ ] Shared-nothing JWT verification via JWKS in every service
+- [x] Auth: Prisma schema + migrations, register/login/refresh/logout, JWKS, Argon2id, rate limits, audit log
+- [x] Auth: email verification, password reset, admin users, OpenAPI
+- [x] Auth: client-credentials service tokens (per-target audience)
+- [x] Product: SQLAlchemy models, Alembic migrations, CRUD, categories, search/filter/paginate
+- [x] Inventory: TypeORM entities + migrations, stock CRUD, reservations with row locks, idempotency, audit
+- [x] Inventory: concurrent-reservation test proving no oversell
+- [x] Order: Mongoose models, price snapshot via Product, state machine, ownership checks
+- [x] Shared-nothing JWT verification via JWKS in Product, Inventory, Order
+- [x] Migrations as one-off `migrate` jobs before each service starts
+- [x] Hand-driven checkout across Auth, Product, Inventory, Order containers
+- [ ] CI observed green on GitHub (needs remotes)
 
 ## Phase 3: Messaging and saga
 - [x] Apply messaging module to LocalStack (done early, during Phase 1 verification)

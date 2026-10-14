@@ -123,7 +123,15 @@ require a CSRF double-submit token (`X-CSRF-Token` header must match the
 `csrf_token` cookie).
 
 Service-to-service calls use short-lived service tokens obtained through a
-client-credentials grant at Auth's `POST /internal/v1/auth/service-token`.
+client-credentials grant at Auth's `POST /internal/v1/auth/service-token`:
+
+| Property | Value |
+|---|---|
+| Request | `{ clientId, clientSecret, audience }`; `audience` must be in the client's allow-list |
+| Token | `sub` = client id (e.g. `ecommerce-order-service`), `roles: ["service"]`, `aud` = target service, 5-minute lifetime |
+| Verifiers | Accept `aud` ∈ {`ecommerce-api` (user tokens), own service name (service tokens)} |
+| Secrets | Random 256-bit; Auth stores only SHA-256 hashes (`SERVICE_CLIENTS`); generate with `npm run service-client:create` in the Auth repo |
+| Callers | Cache per audience until ~1 min before expiry; on `401` drop the cache and retry once (key rotation) |
 
 ## Message envelope (events and commands)
 

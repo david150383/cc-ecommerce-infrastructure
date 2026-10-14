@@ -62,6 +62,14 @@ This proves the service is independently runnable.
 | PostgreSQL | `localhost:5432` (per-service users, see `local/postgres/init.sql`) |
 | MongoDB | `localhost:27017` |
 
+## Accounts and credentials (local only)
+
+| What | Value |
+|---|---|
+| Admin user | `ADMIN_PASSWORD='…' npm run admin:create -- admin@shop.local` in `ecommerce-auth-service`, or via `docker compose --profile apps run --rm -e ADMIN_PASSWORD='…' auth-migrate npx tsx src/scripts/create-admin.ts admin@shop.local` |
+| Service clients | `ecommerce-order-service` / `order-service-local-secret`, `ecommerce-saga-orchestrator` / `saga-orchestrator-local-secret`, `ecommerce-payment-service` / `payment-service-local-secret` (hashes in `SERVICE_CLIENTS` of auth-service) |
+| Demo catalog | `docker compose --profile apps exec product-service python -m app.seed` (idempotent) |
+
 ## Messaging resources
 
 ```bash

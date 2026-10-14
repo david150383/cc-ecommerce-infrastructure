@@ -92,9 +92,10 @@ flowchart LR
     NOTIF --- NOTIFDB
 ```
 
-Every service validates user access tokens locally using the Auth Service's
-public keys (JWKS). Nothing calls the Auth Service on every request. See
-[conventions.md §Authentication](conventions.md#authentication).
+Every service validates access tokens locally using the Auth Service's public keys (JWKS). Nothing calls
+the Auth Service on every request. Service-to-service calls use short-lived tokens from Auth's
+client-credentials grant whose audience names the ONE target service, so a token Order obtained for Product
+is rejected by Inventory. See [conventions.md §Authentication](conventions.md#authentication).
 
 ---
 
@@ -165,6 +166,7 @@ Design rules that come out of this map:
      session to redirect to.
    - Order → Product: to snapshot current prices when the order is created.
    - Payment → Order: to read the authoritative amount, never trusting the caller.
+   - Order → Auth `POST /internal/v1/auth/service-token`: client-credentials grant (cached ~4 min).
    - Auth → Notification: to deliver password-reset and verification links.
      These secrets must never travel through queues or logs. See
      [checkout-saga.md](checkout-saga.md) and the Auth Service README.
@@ -180,8 +182,17 @@ Design rules that come out of this map:
 | Auth | PostgreSQL 17 | `auth_db` / `auth_svc` | `users`, `sessions`, `refresh_tokens`, `email_verification_tokens`, `password_reset_tokens`, `auth_audit_log`, `outbox` | Prisma Migrate |
 | Product | PostgreSQL 17 | `product_db` / `product_svc` | `categories`, `products`, `product_variants`, `product_images`, `product_specifications` | Alembic |
 | Inventory | PostgreSQL 17 | `inventory_db` / `inventory_svc` | `stock_items`, `reservations`, `reservation_lines`, `stock_movements`, `processed_messages`, `outbox` | TypeORM migrations |
-| Order | MongoDB 8 | `order_db` / `order_svc` | `orders` (embedded items + status history), `processed_messages`, `outbox` | migrate-mongo (indexes, data migrations) |
+| Order | MongoDB 8 | `order_db` / `order_svc` | `orders`: one document per order with embedded items, status history **and pending outbox events** | Index sync job (`syncIndexes`); versioned data-migration scripts when needed |
 | Saga | PostgreSQL 17 | `saga_db` / `saga_svc` | `saga_instances`, `saga_steps`, `outbox`, `processed_messages`, `scheduled_timeouts` | node-pg-migrate |
+
+**Why Order embeds its outbox.** MongoDB is atomic per document. Embedding status history and pending
+events in the order lets every state change be ONE conditional `findOneAndUpdate` (compare-and-set on
+status and version). No multi-document transaction is needed, so no replica set either. The Postgres services
+get the same guarantee from a database transaction spanning the business table and the `outbox` table.
+
+**Migrations run as one-off jobs, never at service startup.** Each service image has a `migrate` target
+(Prisma / Alembic / TypeORM / Mongo index sync). Compose runs `<service>-migrate` to completion before
+starting the service. In ECS this becomes a one-off task per deploy, so replicas never race to migrate.
 | Payment | PostgreSQL 17 | `payment_db` / `payment_svc` | `payments`, `payment_attempts`, `webhook_events`, `refunds`, `outbox`, `processed_messages` | node-pg-migrate |
 | Notification | PostgreSQL 17 | `notification_db` / `notification_svc` | `templates`, `preferences`, `notifications`, `delivery_attempts`, `processed_messages` | node-pg-migrate |
 

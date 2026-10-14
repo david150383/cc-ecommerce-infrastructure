@@ -121,6 +121,9 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification-service:4006
       # Browsers treat http://localhost as a secure context, so Secure cookies work locally.
       COOKIE_SECURE: "true"
+      # Service-to-service clients (client-credentials grant). LOCAL-ONLY secrets; only their
+      # SHA-256 hashes are configured here. Production: AWS Secrets Manager.
+      SERVICE_CLIENTS: '[{"clientId":"ecommerce-order-service","secretSha256":"1e5e4c7bc5478dd65aaa11671be35d4f700340612b7cb577cd8aef63ff43b3c0","audiences":["ecommerce-product-service"]},{"clientId":"ecommerce-saga-orchestrator","secretSha256":"bb8445e11589db12892bbde8e14a9ff37cb1738f05a9d674843de216453153d7","audiences":["ecommerce-order-service","ecommerce-inventory-service","ecommerce-payment-service"]},{"clientId":"ecommerce-payment-service","secretSha256":"ce394ae238680387bfee85a518cac6cd356fef147d821f49a7da6765da510ea0","audiences":["ecommerce-order-service"]}]'
     volumes:
       - auth-keys:/app/keys
     depends_on:
@@ -179,18 +182,37 @@ services:
       inventory-migrate: { condition: service_completed_successfully }
       auth-service: { condition: service_started }
 
+  # One-off "migration" job: syncs the MongoDB indexes declared in the model, then exits.
+  order-migrate:
+    profiles: ["apps"]
+    build:
+      context: ${ORDER_SERVICE_PATH:-../ecommerce-order-service}
+      target: migrate
+    environment:
+      MONGODB_URI: mongodb://order_svc:order_local_pw@mongo:27017/order_db?authSource=order_db
+    depends_on:
+      mongo: { condition: service_healthy }
+    restart: "no"
+
   order-service:
     <<: *service-defaults
-    build: ${ORDER_SERVICE_PATH:-../ecommerce-order-service}
+    build:
+      context: ${ORDER_SERVICE_PATH:-../ecommerce-order-service}
+      target: runtime
     ports: ["4004:4004"]
     environment:
       <<: *common-env
       PORT: 4004
       MONGODB_URI: mongodb://order_svc:order_local_pw@mongo:27017/order_db?authSource=order_db
+      AUTH_SERVICE_URL: http://auth-service:4001
+      SERVICE_CLIENT_ID: ecommerce-order-service
+      SERVICE_CLIENT_SECRET: order-service-local-secret   # LOCAL ONLY
       PRODUCT_SERVICE_URL: http://product-service:4002
+      COUPONS: '[{"code":"WELCOME10","percentBps":1000,"maxDiscountMinor":50000}]'
     depends_on:
-      mongo: { condition: service_healthy }
-      localstack: { condition: service_healthy }
+      order-migrate: { condition: service_completed_successfully }
+      auth-service: { condition: service_started }
+      product-service: { condition: service_started }
 
   payment-service:
     <<: *service-defaults
