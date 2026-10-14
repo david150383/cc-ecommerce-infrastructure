@@ -69,6 +69,7 @@ This proves the service is independently runnable.
 | `scripts/verify-local-messaging.sh` | SNS → SQS routing and filter policies in Floci |
 | `scripts/verify-service-messaging.py` | Auth/Inventory/Order publish and consume over the real queues (the saga's steps by hand) |
 | `scripts/verify-checkout-saga.py` | The full checkout through the Saga Orchestrator and the real Payment Service: happy path, admin refund, out of stock, payment declined, timeout + late payment refunded, a saga SIGKILLed mid-checkout that resumes, forged webhook rejected, DLQs empty |
+| `scripts/verify-notifications.py` | Notifications through the real services: verification + password-reset mail via Auth → Notification (token never stored), welcome email from `UserRegistered`, order confirmation email + opted-in SMS, retries while Mailpit is down, low-stock admin alert, DLQs empty. Run the Notification Service with `NOTIFICATION_RETRY_BASE_MS=2000` (`--no-deps`) first |
 
 No stubs: payments go through the real Payment Service with the **mock provider**. The script clicks Pay or
 Decline on the mock's hosted checkout page (`http://localhost:4005/mock-provider/checkout/…`), which sends signed
@@ -98,6 +99,8 @@ Put `PAYMENT_PROVIDER=stripe`, `STRIPE_SECRET_KEY=sk_test_…` and `STRIPE_WEBHO
 | Admin user | `ADMIN_PASSWORD='…' npm run admin:create -- admin@shop.local` in `ecommerce-auth-service`, or via `docker compose --profile apps run --rm -e ADMIN_PASSWORD='…' auth-migrate npx tsx src/scripts/create-admin.ts admin@shop.local` |
 | Service clients | `ecommerce-order-service` / `order-service-local-secret`, `ecommerce-saga-orchestrator` / `saga-orchestrator-local-secret`, `ecommerce-payment-service` / `payment-service-local-secret` (hashes in `SERVICE_CLIENTS` of auth-service) |
 | Mock payment webhook secret | `local-mock-webhook-secret` |
+| Admin alerts (low stock) | sent to `ops@shop.local`, visible in Mailpit |
+| Auth emails | via the Notification Service (`NOTIFICATION_DELIVERY=http`); `AUTH_NOTIFICATION_DELIVERY=smtp-dev` sends straight to Mailpit |
 | Demo catalog | `docker compose --profile apps exec product-service python -m app.seed` (idempotent) |
 
 ## Messaging resources

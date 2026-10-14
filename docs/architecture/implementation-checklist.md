@@ -42,9 +42,10 @@ Tick items only when they have been implemented **and verified**.
 ## Phase 4: Payment and notifications
 - [x] Payment: mock provider (hosted test page) + Stripe test-mode adapter, signed webhooks, refunds, reconciliation
 - [x] Checkout end to end through the real Payment Service: pay, decline, admin refund, late payment refunded, forged webhook (`scripts/verify-checkout-saga.py`)
-- [ ] Notification: templates, preferences, email (SMTP/Mailpit), SMS adapter, retries with backoff, DLQ monitor
+- [x] Notification: templates, preferences, email (SMTP/Mailpit), SMS adapter, retries with backoff, DLQ monitor
+- [x] Auth's secret-bearing email through the Notification Service; notifications end to end (`scripts/verify-notifications.py`)
 - [x] Tests: duplicate webhooks, failed payment, refund (Payment Service)
-- [ ] Tests: notification retry
+- [x] Tests: notification retry, secret never stored or logged
 
 ## Phase 5: Frontend
 - [ ] Auth flows, catalog, cart, checkout, payment result, order tracking

@@ -138,8 +138,9 @@ services:
       # Local only: a signing key is generated on first start and kept in the volume.
       JWT_KEYS_DIR: /app/keys
       FRONTEND_BASE_URL: http://localhost:5173
-      # Until the Notification Service exists (Phase 4), emails go straight to Mailpit.
-      NOTIFICATION_DELIVERY: smtp-dev
+      # Secret-bearing emails (verification, password reset) go through the Notification Service's
+      # internal endpoint; set smtp-dev to bypass it (straight to Mailpit) when working on Auth alone.
+      NOTIFICATION_DELIVERY: ${AUTH_NOTIFICATION_DELIVERY:-http}
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       NOTIFICATION_SERVICE_URL: http://notification-service:4006
@@ -292,20 +293,44 @@ services:
       auth-service: { condition: service_started }
       order-service: { condition: service_started }
 
+  notification-migrate:
+    profiles: ["apps"]
+    build:
+      context: ${NOTIFICATION_SERVICE_PATH:-../ecommerce-notification-service}
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://notification_svc:notification_local_pw@postgres:5432/notification_db
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
   notification-service:
     <<: *service-defaults
-    build: ${NOTIFICATION_SERVICE_PATH:-../ecommerce-notification-service}
+    build:
+      context: ${NOTIFICATION_SERVICE_PATH:-../ecommerce-notification-service}
+      target: runtime
     ports: ["4006:4006"]
     environment:
       <<: *common-env
       PORT: 4006
       DATABASE_URL: postgresql://notification_svc:notification_local_pw@postgres:5432/notification_db
+      JWT_SERVICE_AUDIENCE: ecommerce-notification-service
+      TRANSACTIONAL_CALLERS: ecommerce-auth-service
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
+      EMAIL_FROM: "Shop <no-reply@shop.local>"
       SMS_PROVIDER: console
+      ADMIN_ALERT_EMAILS: ops@shop.local
+      SHOP_BASE_URL: http://localhost:5173
+      MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-6}
+      RETRY_BASE_MS: ${NOTIFICATION_RETRY_BASE_MS:-30000}
+      MESSAGING_ENABLED: "true"
+      COMMANDS_QUEUE_NAME: local-ecommerce-notification-commands
+      INBOX_QUEUE_NAME: local-ecommerce-notification-inbox
+      DLQ_NAMES: local-ecommerce-notification-commands-dlq,local-ecommerce-notification-inbox-dlq
     depends_on:
-      postgres: { condition: service_healthy }
-      floci: { condition: service_healthy }
+      notification-migrate: { condition: service_completed_successfully }
+      messaging-init: { condition: service_completed_successfully }
       mailpit: { condition: service_healthy }
 
   # One-off migration job: applies the saga's SQL migrations (node-pg-migrate), then exits.
