@@ -6,12 +6,12 @@ platform. This repository contains **no application code**.
 | Path | Contents |
 |---|---|
 | [`docs/architecture/`](docs/architecture/README.md) | Architecture, conventions, messaging topology, checkout saga, local dev, checklist |
-| [`compose.yaml`](compose.yaml) | Local environment: PostgreSQL, MongoDB, LocalStack (SNS/SQS), Mailpit, and all services (`--profile apps`) |
+| [`compose.yaml`](compose.yaml) | Local environment: PostgreSQL, MongoDB, Floci (local AWS: SNS/SQS), Mailpit, and all services (`--profile apps`) |
 | [`local/`](local/) | Database init scripts: one database and one role per service |
 | [`terraform/modules/messaging`](terraform/modules/messaging) | SNS topics, SQS queues, DLQs, subscriptions, queue policies, per-service IAM documents, alarms |
-| [`terraform/environments/`](terraform/environments) | `local` (LocalStack), `dev`, `staging`, `prod`: isolated state per environment |
+| [`terraform/environments/`](terraform/environments) | `local` (Floci), `dev`, `staging`, `prod`: isolated state per environment |
 | [`scripts/create-github-repos.sh`](scripts/create-github-repos.sh) | Creates and pushes the independent GitHub repositories |
-| [`scripts/verify-local-messaging.sh`](scripts/verify-local-messaging.sh) | End-to-end check of SNS → SQS routing in LocalStack |
+| [`scripts/verify-local-messaging.sh`](scripts/verify-local-messaging.sh) | End-to-end check of SNS → SQS routing in Floci |
 
 ## Quick start
 

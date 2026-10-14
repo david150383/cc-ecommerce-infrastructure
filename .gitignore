@@ -10,3 +10,6 @@ backend.hcl
 .DS_Store
 # Lock files belong to root configurations (environments/*), not reusable modules.
 terraform/modules/**/.terraform.lock.hcl
+
+# Floci (local AWS emulator) persistent state
+.floci-data/

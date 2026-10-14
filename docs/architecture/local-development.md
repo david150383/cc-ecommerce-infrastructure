@@ -25,7 +25,7 @@ workspace/
 | Node.js | 24 LTS (22+ works) | Node services, frontend |
 | Python | 3.14 | Product Service |
 | Terraform | 1.9+ | Infrastructure |
-| AWS CLI v2 | any | Inspecting LocalStack queues (`aws --endpoint-url http://localhost:4566 sqs list-queues`) |
+| AWS CLI v2 | any | Inspecting Floci queues (`aws --endpoint-url http://localhost:4566 sqs list-queues`) |
 
 ## Two ways to work
 
@@ -33,7 +33,7 @@ workspace/
 
 ```bash
 cd ecommerce-infrastructure
-docker compose up -d                      # postgres, mongo, localstack, mailpit
+docker compose up -d                      # postgres, mongo, floci, mailpit
 cd ../ecommerce-auth-service
 cp .env.example .env
 npm install && npm run dev                # hot reload on :4001
@@ -58,7 +58,7 @@ This proves the service is independently runnable.
 | Frontend | http://localhost:5173 |
 | Auth / Product / Inventory / Order / Payment / Notification / Saga | http://localhost:4001 … 4007 |
 | Mailpit (captured email) | http://localhost:8025 |
-| LocalStack | http://localhost:4566 |
+| Floci (AWS emulator) | http://localhost:4566 (health: `/_floci/health`) |
 | PostgreSQL | `localhost:5432` (per-service users, see `local/postgres/init.sql`) |
 | MongoDB | `localhost:27017` |
 
@@ -75,13 +75,14 @@ This proves the service is independently runnable.
 ```bash
 cd terraform/environments/local
 terraform init
-terraform apply      # creates topics/queues inside LocalStack only (32 resources)
+terraform apply      # creates topics/queues inside Floci only (32 resources)
 cd ../../..
 scripts/verify-local-messaging.sh   # publishes sample events, checks filter-policy routing
 ```
 
-LocalStack keeps state in the `localstack-data` volume. After `docker compose down -v`,
-delete `terraform/environments/local/terraform.tfstate` and apply again.
+Floci runs with `FLOCI_STORAGE_MODE=hybrid` and keeps state in `./.floci-data` (git-ignored), so topics and
+queues survive restarts. To reset messaging: stop Floci, delete `./.floci-data` and
+`terraform/environments/local/terraform.tfstate`, start Floci, apply again.
 
 Inspect queues by hand:
 
@@ -91,11 +92,16 @@ aws --endpoint-url http://localhost:4566 sqs list-queues
 aws --endpoint-url http://localhost:4566 sns list-subscriptions
 ```
 
-## LocalStack versions
+## Floci
 
-The compose file pins `localstack/localstack:4.14`, the last 4.x release. If you
-move to a calendar-versioned image (`2026.x`), create a free LocalStack account
-and set `LOCALSTACK_AUTH_TOKEN` in `.env`.
+The compose file runs `floci/floci:2.0.1` without mounting the Docker socket: we only use SNS, SQS, IAM and
+CloudWatch, and the socket is only needed for container-backed services (Lambda, RDS, ECS, …) while giving
+the container root-equivalent access to the host. If another project already uses port 4566, set
+`FLOCI_PORT` in `.env` (and point host-side tools at that port).
+
+Queue URLs returned by Floci use the hostname `floci` (`FLOCI_HOSTNAME`), which resolves inside the compose
+network only. Services therefore address queues by **name** and configure their SQS client with
+`useQueueUrlAsEndpoint: false`, so the configured endpoint is always used.
 
 ## Troubleshooting
 

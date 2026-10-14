@@ -1,6 +1,6 @@
-# Applies the real messaging module to LocalStack (no AWS account involved).
+# Applies the real messaging module to Floci, the local AWS emulator (no AWS account involved).
 #   terraform init && terraform apply
-# Requires `docker compose up -d localstack` from the repository root.
+# Requires `docker compose up -d floci` from the repository root.
 
 terraform {
   required_version = ">= 1.9"

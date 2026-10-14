@@ -9,10 +9,10 @@ Tick items only when they have been implemented **and verified**.
 - [x] Nine repositories created (contracts deferred to Phase 6), each with its own git history
 - [x] Each repo: README, .env.example, Dockerfile, CI workflow, health endpoints, passing tests
 - [x] Each service: `docs/api.md` + `docs/events.md` + JSON Schemas with validated examples
-- [x] Local compose environment (Postgres per-service roles, Mongo, LocalStack, Mailpit)
+- [x] Local compose environment (Postgres per-service roles, Mongo, Floci, Mailpit)
 - [x] All 8 images build; full stack runs healthy in compose; containers run as non-root
 - [x] Database isolation verified (cross-service connections refused)
-- [x] Messaging topology applied to LocalStack; filter-policy routing verified (`scripts/verify-local-messaging.sh`)
+- [x] Messaging topology applied to the local emulator; filter-policy routing verified (`scripts/verify-local-messaging.sh`)
 - [ ] GitHub remotes created (`scripts/create-github-repos.sh`, needs `gh`)
 - [ ] CI workflows observed passing on GitHub (needs remotes)
 
@@ -30,7 +30,7 @@ Tick items only when they have been implemented **and verified**.
 - [ ] CI observed green on GitHub (needs remotes)
 
 ## Phase 3: Messaging and saga
-- [x] Apply messaging module to LocalStack (done early, during Phase 1 verification)
+- [x] Apply messaging module to the local emulator (Floci since Phase 3)
 - [ ] Outbox relay + idempotent consumer in Inventory and Order
 - [ ] Saga Orchestrator: state machine, persistence, outbox, timeouts, recovery job
 - [ ] Tests: happy path, out of stock, timeout, duplicate messages, crash/restart

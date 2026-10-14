@@ -291,7 +291,7 @@ flowchart LR
             SAGA[saga :4007]
             PG[(postgres :5432<br/>6 databases)]
             MONGO[(mongo :27017)]
-            LS[localstack :4566<br/>SNS + SQS]
+            LS[floci :4566<br/>SNS + SQS]
             MP[mailpit<br/>SMTP :1025, UI :8025]
         end
     end
@@ -305,8 +305,8 @@ flowchart LR
 
 - Each service's build context is a **sibling repository directory**, which you
   can override with an environment variable (`AUTH_SERVICE_PATH=../somewhere`).
-- LocalStack emulates SNS and SQS. The *same* Terraform messaging module that
-  targets AWS is applied to LocalStack (`terraform/environments/local`), so
+- [Floci](https://floci.io) emulates SNS and SQS (it replaced LocalStack in Phase 3). The *same* Terraform
+  messaging module that targets AWS is applied to Floci (`terraform/environments/local`), so
   the local topology matches the real one.
 - The Payment Service runs with `PAYMENT_PROVIDER=mock`. The mock provider
   exposes a fake hosted-checkout page and sends correctly **signed** webhooks,

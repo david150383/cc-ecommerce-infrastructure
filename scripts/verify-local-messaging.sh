@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Verifies the SNS -> SQS topology in LocalStack: publishes each service's example
+# Verifies the SNS -> SQS topology in the local emulator (Floci): publishes each service's example
 # events and checks that every inbox queue receives exactly the message types its
 # filter policies allow, as raw (unwrapped) envelopes.
 #
 # Prerequisites:
-#   docker compose up -d localstack
+#   docker compose up -d floci
 #   (cd terraform/environments/local && terraform init && terraform apply)
 # Sibling service repositories must be checked out next to this one.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
-ls_aws() { aws --endpoint-url "${LOCALSTACK_URL:-http://localhost:4566}" "$@"; }
+ls_aws() { aws --endpoint-url "${AWS_EMULATOR_URL:-http://localhost:4566}" "$@"; }
 ACCOUNT=000000000000
 PREFIX=local-ecommerce
 
