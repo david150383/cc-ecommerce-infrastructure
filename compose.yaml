@@ -83,6 +83,24 @@ services:
       timeout: 3s
       retries: 30
 
+  # One-off job: applies the SNS/SQS topology (the same Terraform as AWS) to Floci, then exits.
+  # Idempotent: when nothing changed it is a no-op. Services that publish/consume wait for it.
+  messaging-init:
+    image: hashicorp/terraform:1.16.2
+    working_dir: /workspace/environments/local
+    # Separate data dir so the container never overwrites your machine's .terraform directory.
+    environment:
+      TF_DATA_DIR: /tmp/terraform-data
+      TF_IN_AUTOMATION: "true"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - terraform init -input=false -no-color >/dev/null && terraform apply -auto-approve -input=false -no-color -var aws_endpoint=http://floci:4566
+    volumes:
+      - ./terraform:/workspace
+    depends_on:
+      floci: { condition: service_healthy }
+    restart: "no"
+
   mailpit:
     image: axllent/mailpit:v1.31
     restart: unless-stopped
@@ -130,10 +148,13 @@ services:
       # Service-to-service clients (client-credentials grant). LOCAL-ONLY secrets; only their
       # SHA-256 hashes are configured here. Production: AWS Secrets Manager.
       SERVICE_CLIENTS: '[{"clientId":"ecommerce-order-service","secretSha256":"1e5e4c7bc5478dd65aaa11671be35d4f700340612b7cb577cd8aef63ff43b3c0","audiences":["ecommerce-product-service"]},{"clientId":"ecommerce-saga-orchestrator","secretSha256":"bb8445e11589db12892bbde8e14a9ff37cb1738f05a9d674843de216453153d7","audiences":["ecommerce-order-service","ecommerce-inventory-service","ecommerce-payment-service"]},{"clientId":"ecommerce-payment-service","secretSha256":"ce394ae238680387bfee85a518cac6cd356fef147d821f49a7da6765da510ea0","audiences":["ecommerce-order-service"]}]'
+      MESSAGING_ENABLED: "true"
+      EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:local-ecommerce-auth-events
     volumes:
       - auth-keys:/app/keys
     depends_on:
       auth-migrate: { condition: service_completed_successfully }
+      messaging-init: { condition: service_completed_successfully }
       mailpit: { condition: service_healthy }
 
   # One-off migration job: applies pending Alembic migrations, then exits.
@@ -184,8 +205,12 @@ services:
       <<: *common-env
       PORT: 4003
       DATABASE_URL: postgresql://inventory_svc:inventory_local_pw@postgres:5432/inventory_db
+      MESSAGING_ENABLED: "true"
+      EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:local-ecommerce-inventory-events
+      COMMANDS_QUEUE_NAME: local-ecommerce-inventory-commands
     depends_on:
       inventory-migrate: { condition: service_completed_successfully }
+      messaging-init: { condition: service_completed_successfully }
       auth-service: { condition: service_started }
 
   # One-off "migration" job: syncs the MongoDB indexes declared in the model, then exits.
@@ -215,8 +240,12 @@ services:
       SERVICE_CLIENT_SECRET: order-service-local-secret   # LOCAL ONLY
       PRODUCT_SERVICE_URL: http://product-service:4002
       COUPONS: '[{"code":"WELCOME10","percentBps":1000,"maxDiscountMinor":50000}]'
+      MESSAGING_ENABLED: "true"
+      EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:local-ecommerce-order-events
+      COMMANDS_QUEUE_NAME: local-ecommerce-order-commands
     depends_on:
       order-migrate: { condition: service_completed_successfully }
+      messaging-init: { condition: service_completed_successfully }
       auth-service: { condition: service_started }
       product-service: { condition: service_started }
 

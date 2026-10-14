@@ -79,3 +79,27 @@ attribute, so filter policies can match on it.
 - CloudWatch alarm: `ApproximateNumberOfMessagesVisible > 0` on every DLQ.
 - CloudWatch alarm: `ApproximateAgeOfOldestMessage > 300s` on every main queue
   (a sign the consumer is stuck).
+
+## Runtime: how services use the topology (Phase 3)
+
+| Service | Publishes (outbox relay) | Consumes |
+|---|---|---|
+| Auth | `auth-events` | n/a |
+| Inventory | `inventory-events` | `inventory-commands` |
+| Order | `order-events` (relay over the embedded outbox, per-document lease) | `order-commands` |
+| Saga | `saga-events`, and commands to the `*-commands` queues | `saga-inbox` |
+
+Rules every implementation follows:
+
+- **Publish only from the outbox**, never inside a request. Rows/entries are claimed so several instances
+  can relay (`FOR UPDATE SKIP LOCKED` in Postgres, a lease field in MongoDB). At-least-once.
+- **Validate commands against the consumer's own schema**; delete the SQS message only after success.
+- **Business refusals are events** (e.g. `InventoryReservationFailed`); the message is deleted.
+- **Poison messages are never deleted**: after `maxReceiveCount` SQS moves them to the DLQ (alarm).
+- **Duplicates re-answer**: the work is not repeated, but the result event is emitted again.
+- **Address queues by name** and set `useQueueUrlAsEndpoint: false`: the emulator's queue URLs use the
+  hostname `floci`, which only resolves inside Docker.
+
+Locally, `messaging-init` (compose) applies `terraform/environments/local` to Floci before any publishing
+service starts. `scripts/verify-local-messaging.sh` checks the routing;
+`scripts/verify-service-messaging.py` checks the services end to end over the real queues.

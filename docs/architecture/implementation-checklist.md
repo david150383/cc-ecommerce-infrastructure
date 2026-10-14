@@ -31,7 +31,9 @@ Tick items only when they have been implemented **and verified**.
 
 ## Phase 3: Messaging and saga
 - [x] Apply messaging module to the local emulator (Floci since Phase 3)
-- [ ] Outbox relay + idempotent consumer in Inventory and Order
+- [x] Floci replaces LocalStack (persistent hybrid storage); `messaging-init` job in compose
+- [x] Outbox relay in Auth, Inventory, Order; idempotent command consumers in Inventory and Order
+- [x] Services verified end to end over the real queues (`scripts/verify-service-messaging.py`)
 - [ ] Saga Orchestrator: state machine, persistence, outbox, timeouts, recovery job
 - [ ] Tests: happy path, out of stock, timeout, duplicate messages, crash/restart
 

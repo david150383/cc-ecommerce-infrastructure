@@ -15,6 +15,12 @@ terraform {
   backend "local" {}
 }
 
+variable "aws_endpoint" {
+  description = "Floci endpoint: http://localhost:4566 from your machine, http://floci:4566 from the compose network."
+  type        = string
+  default     = "http://localhost:4566"
+}
+
 provider "aws" {
   region                      = "us-east-1"
   access_key                  = "test"
@@ -24,11 +30,11 @@ provider "aws" {
   skip_requesting_account_id  = true
 
   endpoints {
-    sns        = "http://localhost:4566"
-    sqs        = "http://localhost:4566"
-    sts        = "http://localhost:4566"
-    iam        = "http://localhost:4566"
-    cloudwatch = "http://localhost:4566"
+    sns        = var.aws_endpoint
+    sqs        = var.aws_endpoint
+    sts        = var.aws_endpoint
+    iam        = var.aws_endpoint
+    cloudwatch = var.aws_endpoint
   }
 }
 
