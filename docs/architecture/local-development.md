@@ -62,6 +62,25 @@ This proves the service is independently runnable.
 | PostgreSQL | `localhost:5432` (per-service users, see `local/postgres/init.sql`) |
 | MongoDB | `localhost:27017` |
 
+## End-to-end checks
+
+| Script | What it proves |
+|---|---|
+| `scripts/verify-local-messaging.sh` | SNS → SQS routing and filter policies in Floci |
+| `scripts/verify-service-messaging.py` | Auth/Inventory/Order publish and consume over the real queues (the saga's steps by hand) |
+| `scripts/verify-checkout-saga.py` | The full checkout through the Saga Orchestrator: happy path, out of stock, payment declined, payment timeout, and a saga SIGKILLed mid-checkout that resumes |
+
+Until the Payment Service exists (Phase 4), `verify-checkout-saga.py` plays its part: it stubs
+`POST /api/v1/payments/intent` on host port 4105 and publishes `PaymentSucceeded`/`PaymentFailed` to the real
+`payment-events` topic. Start the saga pointed at the stub, with a short payment timeout:
+
+```bash
+SAGA_PAYMENT_SERVICE_URL=http://host.docker.internal:4105 SAGA_PAYMENT_TIMEOUT_SECONDS=15 \
+  docker compose --profile apps up -d --no-build saga-orchestrator
+ADMIN_PASSWORD='…' python3 scripts/verify-checkout-saga.py
+docker compose --profile apps up -d --no-build saga-orchestrator   # back to the defaults
+```
+
 ## Accounts and credentials (local only)
 
 | What | Value |
@@ -108,6 +127,8 @@ network only. Services therefore address queues by **name** and configure their 
 | Symptom | Cause / fix |
 |---|---|
 | `docker build` hangs at `resolve image config for docker/dockerfile:1` | BuildKit can stall fetching the syntax frontend through Docker Desktop's proxy. Our Dockerfiles intentionally have no `# syntax=` line |
+| `docker compose up --build <svc>` rebuilds unrelated services | `--build` rebuilds the whole dependency chain. Build only what changed (`docker compose build <svc>`), then `up -d --no-build` |
+| `npm error code ECONNRESET` during image builds | A flaky connection to the npm registry; re-run the build (only the failed images) |
 | `npm ci` fails in Docker with `Missing: ... from lock file` | Lockfile generated on macOS lacks Linux-only optional deps. Delete `node_modules` and `package-lock.json`, run `npm install`, and verify with `docker run --rm -v "$PWD:/app" -w /app node:24-alpine npm ci --ignore-scripts` |
 | Mongo stays `health: starting` | `mongosh` is slow to start under load; the healthcheck allows 15s plus a 30s start period |
 | Published events don't appear in a queue immediately | SNS → SQS delivery is asynchronous. Long-poll (`--wait-time-seconds`) instead of reading once |

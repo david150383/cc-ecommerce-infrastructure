@@ -280,19 +280,49 @@ services:
       floci: { condition: service_healthy }
       mailpit: { condition: service_healthy }
 
+  # One-off migration job: applies the saga's SQL migrations (node-pg-migrate), then exits.
+  saga-migrate:
+    profiles: ["apps"]
+    build:
+      context: ${SAGA_ORCHESTRATOR_PATH:-../ecommerce-saga-orchestrator}
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://saga_svc:saga_local_pw@postgres:5432/saga_db
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
   saga-orchestrator:
     <<: *service-defaults
-    build: ${SAGA_ORCHESTRATOR_PATH:-../ecommerce-saga-orchestrator}
+    build:
+      context: ${SAGA_ORCHESTRATOR_PATH:-../ecommerce-saga-orchestrator}
+      target: runtime
     ports: ["4007:4007"]
     environment:
       <<: *common-env
       PORT: 4007
       DATABASE_URL: postgresql://saga_svc:saga_local_pw@postgres:5432/saga_db
+      AUTH_SERVICE_URL: http://auth-service:4001
+      SERVICE_CLIENT_ID: ecommerce-saga-orchestrator
+      SERVICE_CLIENT_SECRET: saga-orchestrator-local-secret   # LOCAL ONLY
       ORDER_SERVICE_URL: http://order-service:4004
-      PAYMENT_SERVICE_URL: http://payment-service:4005
+      # Overridable until the Payment Service exists (Phase 4): the local end-to-end check points
+      # this at a stub on the host (http://host.docker.internal:4105).
+      PAYMENT_SERVICE_URL: ${SAGA_PAYMENT_SERVICE_URL:-http://payment-service:4005}
+      MESSAGING_ENABLED: "true"
+      SAGA_INBOX_QUEUE_NAME: local-ecommerce-saga-inbox
+      INVENTORY_COMMANDS_QUEUE_NAME: local-ecommerce-inventory-commands
+      ORDER_COMMANDS_QUEUE_NAME: local-ecommerce-order-commands.fifo
+      PAYMENT_COMMANDS_QUEUE_NAME: local-ecommerce-payment-commands
+      SAGA_EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:local-ecommerce-saga-events
+      PAYMENT_TIMEOUT_SECONDS: ${SAGA_PAYMENT_TIMEOUT_SECONDS:-1800}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      postgres: { condition: service_healthy }
-      floci: { condition: service_healthy }
+      saga-migrate: { condition: service_completed_successfully }
+      messaging-init: { condition: service_completed_successfully }
+      auth-service: { condition: service_started }
+      order-service: { condition: service_started }
 
   frontend:
     profiles: ["apps"]

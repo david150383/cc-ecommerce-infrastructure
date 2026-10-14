@@ -34,8 +34,10 @@ Tick items only when they have been implemented **and verified**.
 - [x] Floci replaces LocalStack (persistent hybrid storage); `messaging-init` job in compose
 - [x] Outbox relay in Auth, Inventory, Order; idempotent command consumers in Inventory and Order
 - [x] Services verified end to end over the real queues (`scripts/verify-service-messaging.py`)
-- [ ] Saga Orchestrator: state machine, persistence, outbox, timeouts, recovery job
-- [ ] Tests: happy path, out of stock, timeout, duplicate messages, crash/restart
+- [x] order-commands is a FIFO queue (per-order ordering of status transitions)
+- [x] Saga Orchestrator: pure state machine, persistence, outbox, inbox dedupe, timeouts, compensation, recovery, manual review
+- [x] Tests: happy path, out of stock, payment failure/timeout, duplicate messages, concurrency, crash/restart (unit, integration, Floci)
+- [x] Checkout end to end through the real services incl. a SIGKILLed saga (`scripts/verify-checkout-saga.py`)
 
 ## Phase 4: Payment and notifications
 - [ ] Payment: mock provider + Stripe/Razorpay sandbox adapter, signed webhooks, refunds, reconciliation
