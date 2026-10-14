@@ -70,6 +70,7 @@ This proves the service is independently runnable.
 | `scripts/verify-service-messaging.py` | Auth/Inventory/Order publish and consume over the real queues (the saga's steps by hand) |
 | `scripts/verify-checkout-saga.py` | The full checkout through the Saga Orchestrator and the real Payment Service: happy path, admin refund, out of stock, payment declined, timeout + late payment refunded, a saga SIGKILLed mid-checkout that resumes, forged webhook rejected, DLQs empty |
 | `scripts/verify-notifications.py` | Notifications through the real services: verification + password-reset mail via Auth → Notification (token never stored), welcome email from `UserRegistered`, order confirmation email + opted-in SMS, retries while Mailpit is down, low-stock admin alert, DLQs empty. Run the Notification Service with `NOTIFICATION_RETRY_BASE_MS=2000` (`--no-deps`) first |
+| `ecommerce-frontend`: `npm run e2e` | The storefront and admin UI in a real browser (Playwright, headless Chromium): register, reload keeps the session, browse, cart, checkout, hosted payment page, saga-confirmed result, admin fulfilment, no CSP violations. Needs the frontend container (`docker compose --profile apps up -d --no-deps frontend`) and `npx playwright install --only-shell chromium` once |
 
 No stubs: payments go through the real Payment Service with the **mock provider**. The script clicks Pay or
 Decline on the mock's hosted checkout page (`http://localhost:4005/mock-provider/checkout/…`), which sends signed

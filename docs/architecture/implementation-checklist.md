@@ -48,9 +48,10 @@ Tick items only when they have been implemented **and verified**.
 - [x] Tests: notification retry, secret never stored or logged
 
 ## Phase 5: Frontend
-- [ ] Auth flows, catalog, cart, checkout, payment result, order tracking
-- [ ] Customer account pages, admin pages
-- [ ] Full platform running in compose; end-to-end smoke test
+- [x] Auth flows, catalog, cart, checkout, payment result, order tracking
+- [x] Customer account pages, admin pages
+- [x] Full platform running in compose; end-to-end smoke test (`ecommerce-frontend`: `npm run e2e`, Playwright)
+- [ ] Known gap: customer cancellation of a PAID order stops at CANCELLATION_PENDING (no refund/close flow); the UI does not offer it
 
 ## Phase 6: ecommerce-contracts
 - [ ] Extract OpenAPI, JSON Schema, AsyncAPI; ownership matrix; versioning policy
