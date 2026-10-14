@@ -153,17 +153,31 @@ services:
       product-migrate: { condition: service_completed_successfully }
       auth-service: { condition: service_started }
 
+  # One-off migration job: applies pending TypeORM migrations, then exits.
+  inventory-migrate:
+    profiles: ["apps"]
+    build:
+      context: ${INVENTORY_SERVICE_PATH:-../ecommerce-inventory-service}
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://inventory_svc:inventory_local_pw@postgres:5432/inventory_db
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
   inventory-service:
     <<: *service-defaults
-    build: ${INVENTORY_SERVICE_PATH:-../ecommerce-inventory-service}
+    build:
+      context: ${INVENTORY_SERVICE_PATH:-../ecommerce-inventory-service}
+      target: runtime
     ports: ["4003:4003"]
     environment:
       <<: *common-env
       PORT: 4003
       DATABASE_URL: postgresql://inventory_svc:inventory_local_pw@postgres:5432/inventory_db
     depends_on:
-      postgres: { condition: service_healthy }
-      localstack: { condition: service_healthy }
+      inventory-migrate: { condition: service_completed_successfully }
+      auth-service: { condition: service_started }
 
   order-service:
     <<: *service-defaults
