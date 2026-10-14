@@ -1,78 +1,59 @@
-"""End-to-end checkout through the REAL services (Phase 3): Auth, Product, Inventory, Order and the Saga
-Orchestrator in containers, talking over Floci SNS/SQS.
-
-The Payment Service arrives in Phase 4. Until then this script plays its two parts:
-  - a stub for POST /api/v1/payments/intent (the saga's synchronous call), on host port 4105
-  - PaymentSucceeded / PaymentFailed events published to the real payment-events topic
+"""End-to-end checkout through the REAL services (Phase 4): Auth, Product, Inventory, Order, Payment (mock
+provider) and the Saga Orchestrator in containers, talking over Floci SNS/SQS. No stubs: payments happen by
+clicking Pay / Decline on the mock provider's hosted checkout page, which sends signed webhooks.
 
 Prerequisites (see docs/architecture/local-development.md):
-  SAGA_PAYMENT_SERVICE_URL=http://host.docker.internal:4105 SAGA_PAYMENT_TIMEOUT_SECONDS=15 \\
-    docker compose --profile apps up -d
+  SAGA_PAYMENT_TIMEOUT_SECONDS=15 docker compose --profile apps up -d
   demo catalog seeded; admin@shop.local exists (password via ADMIN_PASSWORD below)
     ADMIN_PASSWORD='…' python3 scripts/verify-checkout-saga.py
 """
+import hashlib
+import hmac
 import json
 import os
 import subprocess
 import sys
-import threading
 import time
-import uuid
 import urllib.error
+import urllib.parse
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import uuid
 
-A, I, O, S = "http://localhost:4001", "http://localhost:4003", "http://localhost:4004", "http://localhost:4007"
+A, I, O, P, S = "http://localhost:4001", "http://localhost:4003", "http://localhost:4004", "http://localhost:4005", "http://localhost:4007"
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "shop owner passphrase 2026")
 os.environ.update(AWS_ACCESS_KEY_ID="test", AWS_SECRET_ACCESS_KEY="test", AWS_DEFAULT_REGION="us-east-1")
 COMPOSE_DIR = os.path.join(os.path.dirname(__file__), "..")
 
 
-# ----------------------------------------------------------------------------- payment stand-in
-class PaymentStub(BaseHTTPRequestHandler):
-    intents: dict[str, str] = {}  # orderId -> paymentId
-
-    def do_POST(self):  # noqa: N802
-        body = json.loads(self.rfile.read(int(self.headers["content-length"])))
-        payment_id = PaymentStub.intents.setdefault(body["orderId"], str(uuid.uuid4()))
-        out = json.dumps({"payment": {"id": payment_id, "checkoutUrl": f"https://pay.example/checkout/{payment_id}"}}).encode()
-        self.send_response(201)
-        self.send_header("content-type", "application/json")
-        self.end_headers()
-        self.wfile.write(out)
-
-    def log_message(self, *args):
-        pass
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # we want to SEE the provider's 303 back to the shop, not follow it
 
 
-def publish_payment_event(kind, saga_id, order_id, customer_id, amount_minor):
-    payment_id = PaymentStub.intents[order_id]
-    payload = {"paymentId": payment_id, "orderId": order_id, "customerId": customer_id,
-               "amount": {"amountMinor": amount_minor, "currency": "INR"}, "provider": "mock"}
-    payload.update({"providerPaymentRef": "mock_e2e"} if kind == "PaymentSucceeded" else {"failureCode": "DECLINED"})
-    envelope = {"messageId": str(uuid.uuid4()), "messageKind": "event", "messageType": kind, "messageVersion": 1,
-                "producer": "ecommerce-payment-service", "occurredAt": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
-                "correlationId": saga_id, "causationId": None, "sagaId": saga_id, "idempotencyKey": None, "payload": payload}
-    subprocess.run(["aws", "--endpoint-url", "http://localhost:4566", "sns", "publish",
-                    "--topic-arn", "arn:aws:sns:us-east-1:000000000000:local-ecommerce-payment-events",
-                    "--message", json.dumps(envelope),
-                    "--message-attributes", json.dumps({"messageType": {"DataType": "String", "StringValue": kind}})],
-                   check=True, capture_output=True)
+opener = urllib.request.build_opener(NoRedirect)
 
 
 # ----------------------------------------------------------------------------- helpers
-def call(method, url, body=None, token=None, key=None):
-    req = urllib.request.Request(url, method=method, data=json.dumps(body).encode() if body is not None else None)
+def call(method, url, body=None, token=None, key=None, raw=None, headers=None):
+    data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+    req = urllib.request.Request(url, method=method, data=data)
     req.add_header("content-type", "application/json")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
     if token:
         req.add_header("authorization", f"Bearer {token}")
     if key:
         req.add_header("idempotency-key", key)
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return r.status, json.loads(r.read() or b"{}")
+        with opener.open(req, timeout=20) as r:
+            text = r.read()
+            return r.status, (json.loads(text) if text and r.headers.get_content_type() == "application/json" else {})
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read() or b"{}")
+        text = e.read()
+        try:
+            return e.code, json.loads(text or b"{}")
+        except ValueError:
+            return e.code, {"location": e.headers.get("location")}
 
 
 def login(email, password):
@@ -83,8 +64,13 @@ def login(email, password):
 
 def wait_for(token, saga_id, statuses, timeout=60):
     deadline = time.time() + timeout
+    b = {}
     while time.time() < deadline:
-        _, b = call("GET", f"{S}/api/v1/checkout/{saga_id}", token=token)
+        try:
+            _, b = call("GET", f"{S}/api/v1/checkout/{saga_id}", token=token)
+        except (ConnectionError, urllib.error.URLError):  # the saga may be restarting (scenario 6)
+            time.sleep(0.5)
+            continue
         if b.get("status") in statuses:
             return b
         time.sleep(0.5)
@@ -100,11 +86,40 @@ def order_status(token, order_id):
     return call("GET", f"{O}/api/v1/orders/{order_id}", token=token)[1]["order"]["status"]
 
 
+def payment_of(admin, customer_id, order_id):
+    _, b = call("GET", f"{P}/api/v1/admin/payments?customerId={customer_id}&limit=100", token=admin)
+    return next(p for p in b["data"] if p["orderId"] == order_id)
+
+
+def wait_payment(admin, customer_id, order_id, statuses, timeout=30):
+    deadline = time.time() + timeout
+    p = {}
+    while time.time() < deadline:
+        p = payment_of(admin, customer_id, order_id)
+        if p["status"] in statuses:
+            return p
+        time.sleep(0.5)
+    raise AssertionError(f"payment for {order_id} did not reach {statuses}; last: {p}")
+
+
+def click(checkout_url, outcome):
+    """What the customer does on the provider's hosted page."""
+    s, _ = call("GET", checkout_url)
+    assert s == 200, s
+    req = urllib.request.Request(f"{checkout_url}/complete", method="POST", data=urllib.parse.urlencode({"outcome": outcome}).encode())
+    req.add_header("content-type", "application/x-www-form-urlencoded")
+    try:
+        opener.open(req, timeout=20)
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers.get("location")
+    raise AssertionError("expected a redirect back to the shop")
+
+
 results = []
 
 
 def check(name, cond, detail=""):
-    results.append(cond)
+    results.append(bool(cond))
     print(f"{'✓' if cond else '✗'} {name}{f'  ({detail})' if detail else ''}")
 
 
@@ -118,72 +133,93 @@ def checkout(token, sku, qty):
 
 
 def main():
-    server = HTTPServer(("0.0.0.0", 4105), PaymentStub)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-
     admin, _ = login("admin@shop.local", ADMIN_PASSWORD)
     email = f"saga-{int(time.time())}@example.com"
     call("POST", f"{A}/api/v1/auth/register", {"email": email, "password": "a long buyer passphrase", "fullName": "Saga Buyer"})
     customer, customer_id = login(email, "a long buyer passphrase")
     sku = "TEE-CLASSIC-WHT-S"
-    call("PATCH", f"{I}/api/v1/inventory/{sku}", {"delta": 5, "reason": "RESTOCK", "note": "saga e2e"}, admin, str(uuid.uuid4()))
+    call("PATCH", f"{I}/api/v1/inventory/{sku}", {"delta": 6, "reason": "RESTOCK", "note": "saga e2e"}, admin, str(uuid.uuid4()))
 
     # 1. Happy path ------------------------------------------------------------------------------
     on_hand0, _ = stock(admin, sku)
+    t0 = time.time()
     c = checkout(customer, sku, 1)
     w = wait_for(customer, c["sagaId"], {"AWAITING_PAYMENT", "CANCELLED", "FAILED"})
-    check("1a. checkout → order priced, stock reserved, payment intent → AWAITING_PAYMENT", w["status"] == "AWAITING_PAYMENT" and w["checkoutUrl"], w["checkoutUrl"])
-    _, held = stock(admin, sku)
-    publish_payment_event("PaymentSucceeded", c["sagaId"], w["orderId"], customer_id, 0)
+    took = time.time() - t0
+    check("1a. checkout → order priced, stock reserved, real payment intent → AWAITING_PAYMENT",
+          w["status"] == "AWAITING_PAYMENT" and w["checkoutUrl"].startswith(f"{P}/mock-provider/checkout/"), f"{took:.1f}s, {w['checkoutUrl']}")
+    p = payment_of(admin, customer_id, w["orderId"])
+    _, order = call("GET", f"{O}/api/v1/orders/{w['orderId']}", token=customer)
+    check("1b. payment amount = the order's grand total (from the Order Service, not the caller)",
+          p["amount"] == order["order"]["totals"]["grandTotal"] and p["status"] == "PENDING", str(p["amount"]))
+    status, location = click(w["checkoutUrl"], "pay")
     done = wait_for(customer, c["sagaId"], {"COMPLETED", "CANCELLED", "UNDER_REVIEW"})
     on_hand1, reserved1 = stock(admin, sku)
-    check("1b. PaymentSucceeded → stock confirmed → order CONFIRMED → saga COMPLETED",
-          done["status"] == "COMPLETED" and order_status(customer, w["orderId"]) == "CONFIRMED" and on_hand1 == on_hand0 - 1 and reserved1 == 0,
-          f"held {held} during payment; on hand {on_hand0}→{on_hand1}")
+    check("1c. Pay on the hosted page → signed webhook → PaymentSucceeded → stock confirmed → order CONFIRMED → COMPLETED",
+          status == 303 and "result=success" in location and done["status"] == "COMPLETED"
+          and order_status(customer, w["orderId"]) == "CONFIRMED" and on_hand1 == on_hand0 - 1 and reserved1 == 0
+          and payment_of(admin, customer_id, w["orderId"])["status"] == "SUCCEEDED", f"on hand {on_hand0}→{on_hand1}")
 
-    # 2. Out of stock -----------------------------------------------------------------------------
+    # 2. Admin refund of the completed order: pending until the provider's webhook confirms -------
+    s, b = call("POST", f"{P}/api/v1/payments/{p['id']}/refund", {"reason": "CUSTOMER_REQUESTED"}, admin, str(uuid.uuid4()))
+    refunded = wait_payment(admin, customer_id, w["orderId"], {"REFUNDED"})
+    check("2. admin refund → 202 PENDING → provider webhook → REFUNDED", s == 202 and b["refund"]["status"] == "PENDING" and refunded["refunded"] == refunded["amount"])
+
+    # 3. Out of stock -----------------------------------------------------------------------------
     c = checkout(customer, sku, 999)
     f = wait_for(customer, c["sagaId"], {"CANCELLED", "FAILED", "COMPLETED"})
-    check("2. out of stock → order cancelled → saga CANCELLED",
+    check("3. out of stock → order cancelled → saga CANCELLED (no payment created)",
           f["status"] == "CANCELLED" and f["failureReason"] == "INSUFFICIENT_STOCK" and order_status(customer, f["orderId"]) == "CANCELLED", f["failureReason"])
 
-    # 3. Payment declined -------------------------------------------------------------------------
+    # 4. Payment declined -------------------------------------------------------------------------
     before = stock(admin, sku)
     c = checkout(customer, sku, 2)
     w = wait_for(customer, c["sagaId"], {"AWAITING_PAYMENT"})
-    publish_payment_event("PaymentFailed", c["sagaId"], w["orderId"], customer_id, 0)
+    click(w["checkoutUrl"], "decline")
     f = wait_for(customer, c["sagaId"], {"CANCELLED", "UNDER_REVIEW"})
-    check("3. payment declined → stock released AND order cancelled → CANCELLED",
-          f["status"] == "CANCELLED" and stock(admin, sku) == before and order_status(customer, w["orderId"]) == "CANCELLED", f"stock back to {before}")
+    check("4. Decline → PaymentFailed → stock released AND order cancelled → CANCELLED",
+          f["status"] == "CANCELLED" and stock(admin, sku) == before and order_status(customer, w["orderId"]) == "CANCELLED"
+          and payment_of(admin, customer_id, w["orderId"])["status"] == "FAILED", f"stock back to {before}")
 
-    # 4. Payment never arrives (SAGA_PAYMENT_TIMEOUT_SECONDS=15) ----------------------------------
+    # 5. No payment in time, then the customer pays anyway (SAGA_PAYMENT_TIMEOUT_SECONDS=15) ------
     c = checkout(customer, sku, 1)
     w = wait_for(customer, c["sagaId"], {"AWAITING_PAYMENT"})
     f = wait_for(customer, c["sagaId"], {"CANCELLED", "UNDER_REVIEW"}, timeout=90)
-    check("4. no payment → timeout → compensation → CANCELLED (PAYMENT_TIMEOUT)",
+    check("5a. no payment → timeout → compensation → CANCELLED (PAYMENT_TIMEOUT)",
           f["status"] == "CANCELLED" and f["failureReason"] == "PAYMENT_TIMEOUT" and stock(admin, sku) == before, f["failureReason"])
+    click(w["checkoutUrl"], "pay")  # the session was still open at the provider
+    late = wait_payment(admin, customer_id, w["orderId"], {"REFUNDED"})
+    check("5b. late payment after cancellation → saga sends RefundRequested → refunded automatically",
+          late["status"] == "REFUNDED" and order_status(customer, w["orderId"]) == "CANCELLED")
 
-    # 5. Saga crashes while the payment event arrives ---------------------------------------------
+    # 6. Saga crashes while the payment event arrives ---------------------------------------------
     c = checkout(customer, sku, 1)
     w = wait_for(customer, c["sagaId"], {"AWAITING_PAYMENT"})
     subprocess.run(["docker", "compose", "--profile", "apps", "kill", "-s", "SIGKILL", "saga-orchestrator"], cwd=COMPOSE_DIR, check=True, capture_output=True)
-    publish_payment_event("PaymentSucceeded", c["sagaId"], w["orderId"], customer_id, 0)  # waits in saga-inbox
+    click(w["checkoutUrl"], "pay")  # PaymentSucceeded waits in saga-inbox
     time.sleep(2)
-    subprocess.run(["docker", "compose", "--profile", "apps", "up", "-d", "--no-build", "--wait", "saga-orchestrator"], cwd=COMPOSE_DIR, check=True, capture_output=True)
+    # `start`, not `up`: restart the same container without re-running its one-off dependency jobs.
+    subprocess.run(["docker", "compose", "--profile", "apps", "start", "saga-orchestrator"], cwd=COMPOSE_DIR, check=True, capture_output=True)
     done = wait_for(customer, c["sagaId"], {"COMPLETED", "CANCELLED", "UNDER_REVIEW"})
-    check("5. saga SIGKILLed while the payment arrives → restarted → resumes from saga-inbox → COMPLETED",
+    check("6. saga SIGKILLed while the payment arrives → restarted → resumes from saga-inbox → COMPLETED",
           done["status"] == "COMPLETED" and order_status(customer, w["orderId"]) == "CONFIRMED")
+
+    # 7. Forged webhook ---------------------------------------------------------------------------
+    raw = json.dumps({"id": "evt_forged", "type": "checkout.session.completed", "data": {"sessionId": "x", "paymentRef": "p", "amountMinor": "1"}}).encode()
+    t = str(int(time.time()))
+    forged = "t=" + t + ",v1=" + hmac.new(b"not-the-real-secret", t.encode() + b"." + raw, hashlib.sha256).hexdigest()
+    s, b = call("POST", f"{P}/api/v1/payments/webhooks/mock", raw=raw, headers={"x-mock-signature": forged})
+    check("7. webhook with a wrong signature → 400 INVALID_SIGNATURE", s == 400 and b.get("code") == "INVALID_SIGNATURE")
 
     # Nothing dead-lettered -----------------------------------------------------------------------
     dlq = {}
-    for q in ("saga-inbox-dlq", "inventory-commands-dlq", "order-commands-dlq.fifo"):
+    for q in ("saga-inbox-dlq", "inventory-commands-dlq", "order-commands-dlq.fifo", "payment-commands-dlq"):
         out = subprocess.run(["aws", "--endpoint-url", "http://localhost:4566", "sqs", "get-queue-attributes", "--queue-url",
                               f"http://localhost:4566/000000000000/local-ecommerce-{q}", "--attribute-names", "ApproximateNumberOfMessages", "--output", "json"],
                              check=True, capture_output=True, text=True).stdout
         dlq[q] = json.loads(out)["Attributes"]["ApproximateNumberOfMessages"]
-    check("6. all DLQs empty", all(v == "0" for v in dlq.values()), str(dlq))
+    check("8. all DLQs empty", all(v == "0" for v in dlq.values()), str(dlq))
 
-    server.shutdown()
     sys.exit(0 if all(results) else 1)
 
 

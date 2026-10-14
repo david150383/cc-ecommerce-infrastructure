@@ -249,20 +249,48 @@ services:
       auth-service: { condition: service_started }
       product-service: { condition: service_started }
 
+  payment-migrate:
+    profiles: ["apps"]
+    build:
+      context: ${PAYMENT_SERVICE_PATH:-../ecommerce-payment-service}
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://payment_svc:payment_local_pw@postgres:5432/payment_db
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
   payment-service:
     <<: *service-defaults
-    build: ${PAYMENT_SERVICE_PATH:-../ecommerce-payment-service}
+    build:
+      context: ${PAYMENT_SERVICE_PATH:-../ecommerce-payment-service}
+      target: runtime
     ports: ["4005:4005"]
     environment:
       <<: *common-env
       PORT: 4005
       DATABASE_URL: postgresql://payment_svc:payment_local_pw@postgres:5432/payment_db
+      AUTH_SERVICE_URL: http://auth-service:4001
+      SERVICE_CLIENT_ID: ecommerce-payment-service
+      SERVICE_CLIENT_SECRET: payment-service-local-secret   # LOCAL ONLY
       ORDER_SERVICE_URL: http://order-service:4004
-      PAYMENT_PROVIDER: mock
+      # mock: hosted test checkout page at PUBLIC_BASE_URL (what the browser reaches), signed webhooks.
+      # Stripe test mode: set PAYMENT_PROVIDER=stripe and the two keys in a git-ignored .env next to this file.
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-mock}
       PUBLIC_BASE_URL: http://localhost:4005
+      MOCK_WEBHOOK_SECRET: local-mock-webhook-secret   # LOCAL ONLY
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      CHECKOUT_EXPIRY_MINUTES: ${PAYMENT_CHECKOUT_EXPIRY_MINUTES:-30}
+      MESSAGING_ENABLED: "true"
+      EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:local-ecommerce-payment-events
+      COMMANDS_QUEUE_NAME: local-ecommerce-payment-commands
+      RECONCILE_INTERVAL_MS: ${PAYMENT_RECONCILE_INTERVAL_MS:-60000}
     depends_on:
-      postgres: { condition: service_healthy }
-      floci: { condition: service_healthy }
+      payment-migrate: { condition: service_completed_successfully }
+      messaging-init: { condition: service_completed_successfully }
+      auth-service: { condition: service_started }
+      order-service: { condition: service_started }
 
   notification-service:
     <<: *service-defaults
@@ -306,9 +334,7 @@ services:
       SERVICE_CLIENT_ID: ecommerce-saga-orchestrator
       SERVICE_CLIENT_SECRET: saga-orchestrator-local-secret   # LOCAL ONLY
       ORDER_SERVICE_URL: http://order-service:4004
-      # Overridable until the Payment Service exists (Phase 4): the local end-to-end check points
-      # this at a stub on the host (http://host.docker.internal:4105).
-      PAYMENT_SERVICE_URL: ${SAGA_PAYMENT_SERVICE_URL:-http://payment-service:4005}
+      PAYMENT_SERVICE_URL: http://payment-service:4005
       MESSAGING_ENABLED: "true"
       SAGA_INBOX_QUEUE_NAME: local-ecommerce-saga-inbox
       INVENTORY_COMMANDS_QUEUE_NAME: local-ecommerce-inventory-commands
@@ -316,13 +342,12 @@ services:
       PAYMENT_COMMANDS_QUEUE_NAME: local-ecommerce-payment-commands
       SAGA_EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:local-ecommerce-saga-events
       PAYMENT_TIMEOUT_SECONDS: ${SAGA_PAYMENT_TIMEOUT_SECONDS:-1800}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       saga-migrate: { condition: service_completed_successfully }
       messaging-init: { condition: service_completed_successfully }
       auth-service: { condition: service_started }
       order-service: { condition: service_started }
+      payment-service: { condition: service_started }
 
   frontend:
     profiles: ["apps"]

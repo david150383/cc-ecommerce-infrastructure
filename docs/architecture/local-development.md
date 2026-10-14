@@ -68,18 +68,28 @@ This proves the service is independently runnable.
 |---|---|
 | `scripts/verify-local-messaging.sh` | SNS → SQS routing and filter policies in Floci |
 | `scripts/verify-service-messaging.py` | Auth/Inventory/Order publish and consume over the real queues (the saga's steps by hand) |
-| `scripts/verify-checkout-saga.py` | The full checkout through the Saga Orchestrator: happy path, out of stock, payment declined, payment timeout, and a saga SIGKILLed mid-checkout that resumes |
+| `scripts/verify-checkout-saga.py` | The full checkout through the Saga Orchestrator and the real Payment Service: happy path, admin refund, out of stock, payment declined, timeout + late payment refunded, a saga SIGKILLed mid-checkout that resumes, forged webhook rejected, DLQs empty |
 
-Until the Payment Service exists (Phase 4), `verify-checkout-saga.py` plays its part: it stubs
-`POST /api/v1/payments/intent` on host port 4105 and publishes `PaymentSucceeded`/`PaymentFailed` to the real
-`payment-events` topic. Start the saga pointed at the stub, with a short payment timeout:
+No stubs: payments go through the real Payment Service with the **mock provider**. The script clicks Pay or
+Decline on the mock's hosted checkout page (`http://localhost:4005/mock-provider/checkout/…`), which sends signed
+webhooks, exactly what a browser user would do. Beyond the cases above it checks an admin refund, a late payment
+after a timeout (refunded automatically by the saga), and that a forged webhook is rejected. Run the saga with a
+short payment timeout:
 
 ```bash
-SAGA_PAYMENT_SERVICE_URL=http://host.docker.internal:4105 SAGA_PAYMENT_TIMEOUT_SECONDS=15 \
-  docker compose --profile apps up -d --no-build saga-orchestrator
-ADMIN_PASSWORD='…' python3 scripts/verify-checkout-saga.py
-docker compose --profile apps up -d --no-build saga-orchestrator   # back to the defaults
+SAGA_PAYMENT_TIMEOUT_SECONDS=15 docker compose --profile apps up -d --no-build --no-deps saga-orchestrator
+ADMIN_PASSWORD='…' python3 -u scripts/verify-checkout-saga.py
+docker compose --profile apps up -d --no-build --no-deps saga-orchestrator   # back to the defaults
 ```
+
+`--no-deps` matters: plain `up <service>` re-runs every one-off dependency job (migrations, Terraform), which
+takes minutes on a busy laptop.
+
+### Stripe test mode instead of the mock
+
+Put `PAYMENT_PROVIDER=stripe`, `STRIPE_SECRET_KEY=sk_test_…` and `STRIPE_WEBHOOK_SECRET=whsec_…` in a git-ignored
+`.env` next to `compose.yaml`, run `stripe listen --forward-to localhost:4005/api/v1/payments/webhooks/stripe`
+(it prints the `whsec_…`), and recreate `payment-service`. Live keys are refused outside `NODE_ENV=production`.
 
 ## Accounts and credentials (local only)
 
@@ -87,6 +97,7 @@ docker compose --profile apps up -d --no-build saga-orchestrator   # back to the
 |---|---|
 | Admin user | `ADMIN_PASSWORD='…' npm run admin:create -- admin@shop.local` in `ecommerce-auth-service`, or via `docker compose --profile apps run --rm -e ADMIN_PASSWORD='…' auth-migrate npx tsx src/scripts/create-admin.ts admin@shop.local` |
 | Service clients | `ecommerce-order-service` / `order-service-local-secret`, `ecommerce-saga-orchestrator` / `saga-orchestrator-local-secret`, `ecommerce-payment-service` / `payment-service-local-secret` (hashes in `SERVICE_CLIENTS` of auth-service) |
+| Mock payment webhook secret | `local-mock-webhook-secret` |
 | Demo catalog | `docker compose --profile apps exec product-service python -m app.seed` (idempotent) |
 
 ## Messaging resources
