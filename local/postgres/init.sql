@@ -24,5 +24,11 @@ REVOKE CONNECT ON DATABASE saga_db         FROM PUBLIC;
 REVOKE CONNECT ON DATABASE payment_db      FROM PUBLIC;
 REVOKE CONNECT ON DATABASE notification_db FROM PUBLIC;
 
--- Prisma Migrate needs to create a temporary "shadow" database during `migrate dev`.
-ALTER ROLE auth_svc CREATEDB;
+-- LOCAL ONLY: integration tests create/drop a throwaway <service>_test database, and
+-- Prisma Migrate needs a temporary "shadow" database. Production roles never get CREATEDB.
+ALTER ROLE auth_svc         CREATEDB;
+ALTER ROLE product_svc      CREATEDB;
+ALTER ROLE inventory_svc    CREATEDB;
+ALTER ROLE saga_svc         CREATEDB;
+ALTER ROLE payment_svc      CREATEDB;
+ALTER ROLE notification_svc CREATEDB;

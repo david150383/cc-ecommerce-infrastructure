@@ -28,6 +28,7 @@ x-service-defaults: &service-defaults
 services:
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres_local_admin
@@ -43,6 +44,7 @@ services:
 
   mongo:
     image: mongo:8
+    restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: mongo_local_admin
@@ -59,6 +61,7 @@ services:
       retries: 10
 
   localstack:
+    restart: unless-stopped
     # 4.14 is the last 4.x release. Newer calendar-versioned images may need
     # LOCALSTACK_AUTH_TOKEN. See docs/architecture/local-development.md.
     image: localstack/localstack:4.14
@@ -76,6 +79,7 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.31
+    restart: unless-stopped
     ports:
       - "1025:1025"   # SMTP
       - "8025:8025"   # Web UI
@@ -123,16 +127,31 @@ services:
       auth-migrate: { condition: service_completed_successfully }
       mailpit: { condition: service_healthy }
 
+  # One-off migration job: applies pending Alembic migrations, then exits.
+  product-migrate:
+    profiles: ["apps"]
+    build:
+      context: ${PRODUCT_SERVICE_PATH:-../ecommerce-product-service}
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql+psycopg://product_svc:product_local_pw@postgres:5432/product_db
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
   product-service:
     <<: *service-defaults
-    build: ${PRODUCT_SERVICE_PATH:-../ecommerce-product-service}
+    build:
+      context: ${PRODUCT_SERVICE_PATH:-../ecommerce-product-service}
+      target: runtime
     ports: ["4002:4002"]
     environment:
       <<: *common-env
       PORT: 4002
       DATABASE_URL: postgresql+psycopg://product_svc:product_local_pw@postgres:5432/product_db
     depends_on:
-      postgres: { condition: service_healthy }
+      product-migrate: { condition: service_completed_successfully }
+      auth-service: { condition: service_started }
 
   inventory-service:
     <<: *service-defaults
