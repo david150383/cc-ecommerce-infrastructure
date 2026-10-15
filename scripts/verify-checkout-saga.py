@@ -34,7 +34,7 @@ opener = urllib.request.build_opener(NoRedirect)
 
 
 # ----------------------------------------------------------------------------- helpers
-def call(method, url, body=None, token=None, key=None, raw=None, headers=None):
+def call(method, url, body=None, token=None, key=None, raw=None, headers=None, timeout=20):
     data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
     req = urllib.request.Request(url, method=method, data=data)
     req.add_header("content-type", "application/json")
@@ -45,7 +45,7 @@ def call(method, url, body=None, token=None, key=None, raw=None, headers=None):
     if key:
         req.add_header("idempotency-key", key)
     try:
-        with opener.open(req, timeout=20) as r:
+        with opener.open(req, timeout=timeout) as r:
             text = r.read()
             return r.status, (json.loads(text) if text and r.headers.get_content_type() == "application/json" else {})
     except urllib.error.HTTPError as e:
@@ -65,16 +65,19 @@ def login(email, password):
 def wait_for(token, saga_id, statuses, timeout=60):
     deadline = time.time() + timeout
     b = {}
+    failed = 0
     while time.time() < deadline:
         try:
-            _, b = call("GET", f"{S}/api/v1/checkout/{saga_id}", token=token)
-        except (ConnectionError, urllib.error.URLError):  # the saga may be restarting (scenario 6)
+            _, b = call("GET", f"{S}/api/v1/checkout/{saga_id}", token=token, timeout=5)
+        except (ConnectionError, TimeoutError, urllib.error.URLError):  # the saga may be restarting (scenario 6)
+            failed += 1
             time.sleep(0.5)
             continue
         if b.get("status") in statuses:
             return b
         time.sleep(0.5)
-    raise AssertionError(f"saga {saga_id} did not reach {statuses}; last: {b}")
+    # A stale "last" is suspicious when polls failed: say so instead of blaming the saga.
+    raise AssertionError(f"saga {saga_id} did not reach {statuses}; last seen: {b.get('status')}; {failed} status polls failed or timed out")
 
 
 def stock(admin, sku):
@@ -201,8 +204,9 @@ def main():
     # `start`, not `up`: restart the same container without re-running its one-off dependency jobs.
     subprocess.run(["docker", "compose", "--profile", "apps", "start", "saga-orchestrator"], cwd=COMPOSE_DIR, check=True, capture_output=True)
     done = wait_for(customer, c["sagaId"], {"COMPLETED", "CANCELLED", "UNDER_REVIEW"})
+    order_now = order_status(customer, w["orderId"])
     check("6. saga SIGKILLed while the payment arrives → restarted → resumes from saga-inbox → COMPLETED",
-          done["status"] == "COMPLETED" and order_status(customer, w["orderId"]) == "CONFIRMED")
+          done["status"] == "COMPLETED" and order_now == "CONFIRMED", f"saga {done['status']}, order {order_now}")
 
     # 7. Forged webhook ---------------------------------------------------------------------------
     raw = json.dumps({"id": "evt_forged", "type": "checkout.session.completed", "data": {"sessionId": "x", "paymentRef": "p", "amountMinor": "1"}}).encode()

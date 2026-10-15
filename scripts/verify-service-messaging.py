@@ -3,6 +3,10 @@ Orchestrator automates, and checks every result arrives in saga-inbox / notifica
 
 Prerequisites: `docker compose --profile apps up -d` (with messaging-init done), the demo catalog
 seeded and stock for TEE-CLASSIC-BLK-M (see docs/architecture/local-development.md).
+
+It plays the saga's role, so it reads saga-inbox and notification-inbox itself: the two services that
+consume them (saga-orchestrator, notification-service) are stopped for the duration and started again
+on exit, however the script ends.
     python3 scripts/verify-service-messaging.py
 """
 import json, os, subprocess, sys, time, uuid, urllib.request, urllib.error
@@ -52,6 +56,13 @@ def command(qname, mtype, payload, saga_id, key):
 def ok(n, text, cond):
     print(f"{'✓' if cond else '✗'} {n}. {text}")
     if not cond: sys.exit(1)
+
+import atexit
+COMPOSE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+INBOX_CONSUMERS = ["saga-orchestrator", "notification-service"]
+subprocess.run(["docker", "compose", "--profile", "apps", "stop", *INBOX_CONSUMERS], cwd=COMPOSE_DIR, check=True, capture_output=True)
+atexit.register(lambda: subprocess.run(["docker", "compose", "--profile", "apps", "start", *INBOX_CONSUMERS], cwd=COMPOSE_DIR, capture_output=True))
+print(f"(stopped {', '.join(INBOX_CONSUMERS)} while this script plays the saga; restarted on exit)")
 
 for q in ("saga-inbox", "notification-inbox"): purge(q)
 time.sleep(1)
