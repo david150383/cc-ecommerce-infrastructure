@@ -352,3 +352,16 @@ output "docdb_endpoint" {
 output "site_bucket" {
   value = module.frontend.bucket_name
 }
+
+# For CI (GitHub environment variables): where one-off migration tasks run.
+output "cluster_name" {
+  value = module.platform.cluster_name
+}
+
+output "private_subnet_ids" {
+  value = module.network.private_subnet_ids
+}
+
+output "tasks_security_group_id" {
+  value = module.platform.tasks_security_group_id
+}

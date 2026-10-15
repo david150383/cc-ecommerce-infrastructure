@@ -107,3 +107,7 @@ output "cloudfront_domain" { value = module.stack.cloudfront_domain }
 output "alb_dns_name" { value = module.stack.alb_dns_name }
 output "deploy_role_arns" { value = module.stack.deploy_role_arns }
 output "service_secret_arns" { value = module.stack.service_secret_arns }
+output "cluster_name" { value = module.stack.cluster_name }
+output "private_subnet_ids" { value = module.stack.private_subnet_ids }
+output "tasks_security_group_id" { value = module.stack.tasks_security_group_id }
+output "site_bucket" { value = module.stack.site_bucket }

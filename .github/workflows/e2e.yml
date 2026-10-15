@@ -1,0 +1,62 @@
+# The whole platform, end to end, from the ten repositories at their current main branches: compose up,
+# then the same checks as on a developer machine (docs/architecture/local-development.md). Nightly and on
+# demand: it builds every image, so it is too slow for every pull request.
+name: e2e
+
+on:
+  schedule:
+    - cron: "30 21 * * *" # 03:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  platform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ADMIN_PASSWORD: e2e only passphrase 2026
+    steps:
+      - name: Check out all repositories side by side
+        run: |
+          set -euo pipefail
+          for r in auth-service product-service inventory-service order-service payment-service notification-service saga-orchestrator frontend infrastructure contracts; do
+            git clone --depth 1 "https://github.com/${{ github.repository_owner }}/ecommerce-$r.git" "ecommerce-$r"
+          done
+      - name: Contracts are consistent, and every service is pinned to a real release
+        working-directory: ecommerce-contracts
+        run: |
+          set -euo pipefail
+          npm ci && npm test && npm run check
+          for r in auth-service inventory-service order-service payment-service notification-service saga-orchestrator frontend; do
+            node "../ecommerce-$r/scripts/verify-contracts.mjs" "../ecommerce-$r"
+          done
+      - name: Start the stack
+        working-directory: ecommerce-infrastructure
+        run: |
+          set -euo pipefail
+          SAGA_PAYMENT_TIMEOUT_SECONDS=15 NOTIFICATION_RETRY_BASE_MS=2000 docker compose --profile apps up -d --build --wait
+          docker compose --profile apps exec -T product-service python -m app.seed
+          docker compose --profile apps run --rm -e ADMIN_PASSWORD auth-migrate npx tsx src/scripts/create-admin.ts admin@shop.local
+      - name: Messaging, checkout saga, notifications
+        working-directory: ecommerce-infrastructure
+        run: |
+          set -euo pipefail
+          scripts/verify-local-messaging.sh
+          python3 -u scripts/verify-service-messaging.py
+          python3 -u scripts/verify-checkout-saga.py
+          python3 -u scripts/verify-notifications.py
+      - name: Browser smoke test (Playwright)
+        working-directory: ecommerce-frontend
+        env:
+          E2E_ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps --only-shell chromium
+          npm run e2e
+      - name: Service logs on failure
+        if: failure()
+        working-directory: ecommerce-infrastructure
+        run: docker compose --profile apps logs --no-color --tail 200

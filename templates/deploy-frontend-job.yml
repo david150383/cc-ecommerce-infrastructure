@@ -1,0 +1,57 @@
+# GENERATED from ecommerce-infrastructure/templates (scripts/generate-workflows.py). Do not edit here.
+#
+# Builds the SPA for ONE environment (the API is on the same origin, so every VITE_*_API_URL is the shop's
+# own origin) and publishes it: fingerprinted assets first (cached forever), index.html last (no-cache),
+# then a CloudFront invalidation of index.html. The bucket is versioned: a bad release is undone by
+# re-running this workflow for the previous commit (runbooks.md).
+name: deploy-environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-frontend-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build for ${{ inputs.environment }}
+        env:
+          VITE_AUTH_API_URL: ${{ vars.SHOP_ORIGIN }}
+          VITE_PRODUCT_API_URL: ${{ vars.SHOP_ORIGIN }}
+          VITE_INVENTORY_API_URL: ${{ vars.SHOP_ORIGIN }}
+          VITE_ORDER_API_URL: ${{ vars.SHOP_ORIGIN }}
+          VITE_PAYMENT_API_URL: ${{ vars.SHOP_ORIGIN }}
+          VITE_NOTIFICATION_API_URL: ${{ vars.SHOP_ORIGIN }}
+          VITE_SAGA_API_URL: ${{ vars.SHOP_ORIGIN }}
+        run: npm run build
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Publish (assets first, index.html last) and invalidate
+        env:
+          BUCKET: ${{ vars.SITE_BUCKET }}
+          DISTRIBUTION: ${{ vars.DISTRIBUTION_ID }}
+        run: |
+          set -euo pipefail
+          aws s3 sync dist/assets "s3://$BUCKET/assets" --cache-control "public, max-age=31536000, immutable"
+          aws s3 sync dist "s3://$BUCKET" --exclude "assets/*" --exclude index.html --cache-control "public, max-age=300"
+          aws s3 cp dist/index.html "s3://$BUCKET/index.html" --cache-control "no-cache"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths /index.html >/dev/null

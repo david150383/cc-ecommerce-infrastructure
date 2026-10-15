@@ -51,6 +51,15 @@ jobs:
       - run: terraform test
         working-directory: terraform/modules/${{ matrix.module }}
 
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint this repository's workflows (actionlint + shellcheck)
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -no-color
+
   compose:
     runs-on: ubuntu-latest
     steps:
