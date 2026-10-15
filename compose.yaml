@@ -365,6 +365,7 @@ services:
       INVENTORY_COMMANDS_QUEUE_NAME: local-ecommerce-inventory-commands
       ORDER_COMMANDS_QUEUE_NAME: local-ecommerce-order-commands.fifo
       PAYMENT_COMMANDS_QUEUE_NAME: local-ecommerce-payment-commands
+      NOTIFICATION_COMMANDS_QUEUE_NAME: local-ecommerce-notification-commands
       SAGA_EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:local-ecommerce-saga-events
       PAYMENT_TIMEOUT_SECONDS: ${SAGA_PAYMENT_TIMEOUT_SECONDS:-1800}
     depends_on:
