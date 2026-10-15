@@ -72,6 +72,10 @@ One origin for the shop and its API: no CORS, and the refresh/CSRF cookies are f
    - `STRIPE_WEBHOOK_SECRET`: from the Stripe dashboard webhook endpoint
      `https://shop.example.com/api/v1/payments/webhooks/stripe`.
    - Notification `SMTP_USER`/`SMTP_PASSWORD`: SES SMTP credentials (SES domain verified, out of sandbox).
+   - `order-service.MONGODB_URI` (DocumentDB, output `docdb_endpoint`):
+     `mongodb://order_svc:<password>@<docdb_endpoint>:27017/order_db?tls=true&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false`.
+     The service refuses to start without `tls=true` and `retryWrites=false` (DocumentDB has no retryable
+     writes). The RDS CA bundle ships in the image and is used automatically.
 7. **GitHub**: for each repository create the environment (`dev`, `staging`, `production`; production with
    required reviewers) and set `AWS_DEPLOY_ROLE_ARN` (output `deploy_role_arns`) and `AWS_REGION` as
    environment variables (not secrets: they are not sensitive).
