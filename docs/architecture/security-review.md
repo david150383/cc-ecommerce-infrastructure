@@ -39,9 +39,11 @@ review against the platform's threat model, and tests added for every fix. Nothi
 | S-7 | Medium | Auth could not load signing keys on ECS (no persistent disk) | **Fixed**: `JWT_SIGNING_KEYS` from Secrets Manager, validated at startup |
 | S-8 | Low | Base images are referenced by tag (`node:24-alpine`), not digest; no automated dependency updates | **Open**: pin digests and enable Renovate/Dependabot once the repositories are on GitHub |
 | S-9 | Low | CI does not fail on new vulnerable dependencies | **Open**: add `npm audit --omit=dev --audit-level=high` (with an allowlist for S-5) to service CI; ECR scan-on-push is configured, but its findings do not alarm yet |
-| S-10 | Low | Product search uses an unindexed `ILIKE '%q%'`: expensive queries are cheap to send | **Mitigated** by WAF limits; consider `pg_trgm` indexes |
-| S-11 | Medium | A paid order cancelled by its customer stops at `CANCELLATION_PENDING` (no refund/close flow) | **Open (known gap)**: the UI does not offer it |
-| S-12 | Low | Order Service on DocumentDB is untested (developed against MongoDB 8) | **Open**: run the Order test suite against DocumentDB before the first production deploy |
+| S-10 | Low | Product search cost (the original note said `ILIKE`; it was full text with a GIN index) | **Fixed**: full text plus `pg_trgm` word similarity, both index-backed (`ix_products_search_vector`, `ix_products_name_trgm`; a test proves the trigram index can serve the query); WAF rate limits still apply |
+| S-11 | Medium | A paid order cancelled by its customer stops at `CANCELLATION_PENDING` (no refund/close flow) | **Fixed**: the saga refunds, closes the order as `REFUNDED` and returns the stock (`verify-order-cancellation.py`); a failed refund goes to manual review and the customer is emailed |
+| S-12 | Low | Order Service on DocumentDB is untested (developed against MongoDB 8) | **Reduced**: TLS with the pinned RDS CA bundle, `retryWrites=false` enforced at startup, operators limited to a DocumentDB 5.0 allowlist (test). **Still open**: run the Order test suite against a real DocumentDB before the first production deploy |
+| S-13 | Low | `sprintf-js` ≤1.1.3 (GHSA-hp3w-g68c-fv3c, DoS) in Inventory's test-coverage tooling (istanbul → js-yaml 3 → argparse 1); no patched version exists | **Accepted**: dev-only, never shipped, no untrusted input. CI fails only on high/critical in production dependencies |
+| S-14 | — | Dependency advisories | **Gate added**: `npm audit --omit=dev --audit-level=high` in every Node repo's CI, `pip-audit` in Product's. Auth's 4 high advisories via the Prisma CLI fixed with overrides (`deepmerge-ts` 8.0.2, `mysql2` 3.24.5) |
 
 ## Verified controls (tests that would fail if they regressed)
 
