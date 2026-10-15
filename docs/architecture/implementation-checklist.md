@@ -54,8 +54,9 @@ Tick items only when they have been implemented **and verified**.
 - [ ] Known gap: customer cancellation of a PAID order stops at CANCELLATION_PENDING (no refund/close flow); the UI does not offer it
 
 ## Phase 6: ecommerce-contracts
-- [ ] Extract OpenAPI, JSON Schema, AsyncAPI; ownership matrix; versioning policy
-- [ ] CI compatibility checks; tagged release; pinned consumers; breaking-change demo
+- [x] Extract OpenAPI, JSON Schema, AsyncAPI; ownership matrix; versioning policy
+- [x] CI compatibility checks; tagged release (v1.0.0, v1.1.0); pinned consumers; breaking-change demo
+- [ ] Known gap: Inventory publishes no OpenAPI response schemas, so its responses are not contract-checked
 
 ## Phase 7: Production readiness
 - [ ] ECS deployment module, OIDC roles, Secrets Manager, alarms

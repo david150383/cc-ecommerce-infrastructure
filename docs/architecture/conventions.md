@@ -1,9 +1,9 @@
 # Platform Conventions
 
-Every repository follows these conventions. Until `ecommerce-contracts` exists
-(Phase 6), each repository restates the parts it implements in its own
-`docs/`. When a repo's docs disagree with this file, this file wins. Fix the
-repo.
+Every repository follows these conventions. Each repository restates the parts it implements in its own
+`docs/`. When a repo's docs disagree with this file, this file wins. Fix the repo. Machine-readable contracts
+(OpenAPI, message schemas, AsyncAPI) and the rules for changing them live in `ecommerce-contracts`
+(`VERSIONING.md`).
 
 ## API versioning
 
