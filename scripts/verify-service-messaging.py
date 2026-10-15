@@ -63,6 +63,10 @@ INBOX_CONSUMERS = ["saga-orchestrator", "notification-service"]
 subprocess.run(["docker", "compose", "--profile", "apps", "stop", *INBOX_CONSUMERS], cwd=COMPOSE_DIR, check=True, capture_output=True)
 atexit.register(lambda: subprocess.run(["docker", "compose", "--profile", "apps", "start", *INBOX_CONSUMERS], cwd=COMPOSE_DIR, capture_output=True))
 print(f"(stopped {', '.join(INBOX_CONSUMERS)} while this script plays the saga; restarted on exit)")
+# A consumer stopped mid long-poll can leave its receive open on the queue side for up to 20 s; a message
+# arriving then is handed to the dead receiver and stays invisible for the 60 s visibility timeout. Let
+# any such orphaned poll expire before producing anything.
+time.sleep(21)
 
 for q in ("saga-inbox", "notification-inbox"): purge(q)
 time.sleep(1)
