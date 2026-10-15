@@ -46,6 +46,7 @@ jobs:
           scripts/verify-local-messaging.sh
           python3 -u scripts/verify-service-messaging.py
           python3 -u scripts/verify-checkout-saga.py
+          python3 -u scripts/verify-order-cancellation.py
           python3 -u scripts/verify-notifications.py
       - name: Browser smoke test (Playwright)
         working-directory: ecommerce-frontend
