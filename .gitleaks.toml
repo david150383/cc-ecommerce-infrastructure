@@ -1,0 +1,10 @@
+# Secret scanning (gitleaks): the default rules, plus narrowly scoped false positives.
+[extend]
+useDefault = true
+
+# compose.yaml: SHA-256 HASHES of local-only service-client secrets (Auth's SERVICE_CLIENTS), not the
+# secrets themselves.
+[[allowlists]]
+description = "service client secret hashes"
+regexTarget = "line"
+regexes = ['''secretSha256":"[0-9a-f]{64}"''']

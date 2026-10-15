@@ -24,6 +24,29 @@ mock_provider "aws" {
   }
 }
 
+mock_provider "aws" {
+  alias           = "us_east_1"
+  override_during = plan
+  mock_data "aws_availability_zones" {
+    defaults = { names = ["ap-south-1a", "ap-south-1b", "ap-south-1c"] }
+  }
+  mock_data "aws_region" {
+    defaults = { region = "ap-south-1", name = "ap-south-1" }
+  }
+  mock_data "aws_caller_identity" {
+    defaults = { account_id = "123456789012" }
+  }
+  mock_data "aws_iam_policy_document" {
+    defaults = { json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}" }
+  }
+  mock_resource "aws_db_instance" {
+    defaults = { master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:rds", kms_key_id = "k", secret_status = "active" }] }
+  }
+  mock_resource "aws_docdb_cluster" {
+    defaults = { master_user_secret = [{ secret_arn = "arn:aws:secretsmanager:ap-south-1:123456789012:secret:docdb", kms_key_id = "k", secret_status = "active" }] }
+  }
+}
+
 variables {
   environment                = "prod"
   domain                     = "shop.example.com"

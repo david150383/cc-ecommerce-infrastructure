@@ -284,8 +284,16 @@ module "service" {
   tags               = var.tags
 }
 
+module "waf" {
+  source    = "../waf"
+  providers = { aws = aws.us_east_1 }
+  name      = local.name
+  tags      = var.tags
+}
+
 module "frontend" {
   source                    = "../frontend"
+  web_acl_arn               = module.waf.web_acl_arn
   name                      = local.name
   domain                    = var.domain
   certificate_arn_us_east_1 = var.cloudfront_certificate_arn

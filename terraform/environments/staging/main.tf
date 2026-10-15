@@ -29,6 +29,20 @@ provider "aws" {
   }
 }
 
+# CloudFront-scoped resources (WAF) live in us-east-1.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      project     = "ecommerce"
+      environment = "staging"
+      managed-by  = "terraform"
+    }
+  }
+}
+
 variable "aws_region" {
   type    = string
   default = "ap-south-1"
@@ -75,6 +89,7 @@ variable "admin_alert_emails" {
 
 module "stack" {
   source                      = "../../modules/stack"
+  providers                   = { aws = aws, aws.us_east_1 = aws.us_east_1 }
   environment                 = "staging"
   domain                      = var.domain
   alb_origin_domain           = var.alb_origin_domain

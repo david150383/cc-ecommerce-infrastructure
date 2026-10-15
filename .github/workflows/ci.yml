@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        module: [network, platform, data, service, frontend, github-oidc, stack]
+        module: [network, platform, data, service, frontend, github-oidc, waf, stack]
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
