@@ -342,6 +342,12 @@ copies had drifted (in `$id`), and one schema still named a queue that had becom
   example through its handler; the frontend's typecheck asserts each API response type it reads.
 - **Tolerant readers:** consumers still validate only what they use (adding optional fields is not breaking).
 
-## 8. Implementation checklist
+## 8. Production
+
+- [deployment.md](deployment.md): AWS design, one-time setup, deployment flow
+- [security-review.md](security-review.md): threat model, scans, findings
+- [runbooks.md](runbooks.md): rollback, restore, dead letters, stuck checkouts, secret rotation, drill log
+
+## 9. Implementation checklist
 
 See [implementation-checklist.md](implementation-checklist.md).

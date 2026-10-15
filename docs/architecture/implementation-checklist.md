@@ -59,5 +59,9 @@ Tick items only when they have been implemented **and verified**.
 - [ ] Known gap: Inventory publishes no OpenAPI response schemas, so its responses are not contract-checked
 
 ## Phase 7: Production readiness
-- [ ] ECS deployment module, OIDC roles, Secrets Manager, alarms
-- [ ] Security review, recovery/rollback drills, E2E + contract tests in CI
+- [x] ECS deployment design (network, platform, data, service, frontend, WAF, stack; dev/staging/prod), planned offline against a mocked provider with `terraform test`. **Not applied** (needs approval and the one-time setup in deployment.md)
+- [x] GitHub OIDC deploy roles (per repository and GitHub environment), Secrets Manager (per service, values out of band), alarms (ALB, services, databases, DLQs)
+- [x] Deploy pipelines (generated into every repository, actionlint-clean); nightly E2E workflow with contract-pin verification
+- [x] Security review (security-review.md): scans with evidence, 12 findings (S-1 inventory hoarding and S-2 per-task rate limits fixed)
+- [x] Recovery and rollback drills run locally with real output (runbooks.md): PostgreSQL and MongoDB restore, DLQ redrive, rollback; saga crash recovery (Phases 3–4)
+- [ ] Open: first apply in a dev account (approval); measure real RTO/rollback times in staging; S-8, S-9, S-11, S-12 (security-review.md)
