@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (git-ignored). No secrets belong here.
+alb_certificate_arn        = "arn:aws:acm:ap-south-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+cloudfront_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+github_owner               = "your-github-user-or-org"
+alarm_emails               = ["ops@example.com"]
+admin_alert_emails         = ["ops@example.com"]

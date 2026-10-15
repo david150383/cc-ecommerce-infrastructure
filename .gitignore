@@ -13,3 +13,7 @@ terraform/modules/**/.terraform.lock.hcl
 
 # Floci (local AWS emulator) persistent state
 .floci-data/
+
+# Real environment inputs (copy from terraform.tfvars.example)
+*.tfvars
+!*.tfvars.example

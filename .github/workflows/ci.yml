@@ -34,6 +34,23 @@ jobs:
         run: terraform validate
         working-directory: ${{ matrix.root }}
 
+  # Plans every module (and whole environments) against a MOCKED AWS provider and asserts the security
+  # and resilience guarantees. No AWS credentials exist in this workflow; nothing can be created.
+  terraform-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [network, platform, data, service, frontend, github-oidc, stack]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.2
+      - run: terraform init -backend=false -input=false
+        working-directory: terraform/modules/${{ matrix.module }}
+      - run: terraform test
+        working-directory: terraform/modules/${{ matrix.module }}
+
   compose:
     runs-on: ubuntu-latest
     steps:
