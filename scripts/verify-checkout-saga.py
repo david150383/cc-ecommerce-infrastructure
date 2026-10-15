@@ -76,6 +76,14 @@ def wait_for(token, saga_id, statuses, timeout=60):
         if b.get("status") in statuses:
             return b
         time.sleep(0.5)
+    # One last look: on an overloaded machine this process itself can stall past the deadline, and the
+    # last status it saw may be minutes old.
+    try:
+        _, b = call("GET", f"{S}/api/v1/checkout/{saga_id}", token=token, timeout=10)
+        if b.get("status") in statuses:
+            return b
+    except (ConnectionError, TimeoutError, urllib.error.URLError):
+        failed += 1
     # A stale "last" is suspicious when polls failed: say so instead of blaming the saga.
     raise AssertionError(f"saga {saga_id} did not reach {statuses}; last seen: {b.get('status')}; {failed} status polls failed or timed out")
 
