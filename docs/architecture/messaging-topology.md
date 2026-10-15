@@ -26,8 +26,8 @@ unrelated services start acting on requests meant for someone else.
 | Topic | Producer | Messages |
 |---|---|---|
 | `auth-events` | Auth | `UserRegistered`, `UserEmailVerified` |
-| `order-events` | Order | `OrderCreated`, `OrderConfirmed`, `OrderCancelled`, `OrderStatusChanged` |
-| `inventory-events` | Inventory | `InventoryReserved`, `InventoryReservationFailed`, `InventoryReservationConfirmed`, `InventoryReservationReleased`, `InventoryLowStock` |
+| `order-events` | Order | `OrderCreated`, `OrderConfirmed`, `OrderCancelled`, `OrderCancellationRequested`, `OrderStatusChanged` |
+| `inventory-events` | Inventory | `InventoryReserved`, `InventoryReservationFailed`, `InventoryReservationConfirmed`, `InventoryReservationReleased`, `InventoryReturned`, `InventoryLowStock` |
 | `payment-events` | Payment | `PaymentInitiated`, `PaymentSucceeded`, `PaymentFailed`, `RefundSucceeded`, `RefundFailed` |
 | `saga-events` | Saga | `CheckoutCompleted`, `CheckoutFailed`, `SagaManualReviewRequired` |
 
@@ -35,7 +35,7 @@ unrelated services start acting on requests meant for someone else.
 
 | Queue | Consumer | Commands | Sent by |
 |---|---|---|---|
-| `inventory-commands` | Inventory | `InventoryReservationRequested`, `InventoryReservationConfirmRequested`, `InventoryReservationReleaseRequested` | Saga |
+| `inventory-commands` | Inventory | `InventoryReservationRequested`, `InventoryReservationConfirmRequested`, `InventoryReservationReleaseRequested`, `InventoryReturnRequested` | Saga |
 | `order-commands.fifo` | Order | `OrderStatusTransitionRequested` (FIFO, `MessageGroupId` = orderId) | Saga |
 | `payment-commands` | Payment | `RefundRequested` | Saga |
 | `notification-commands` | Notification | `NotificationRequested` | Saga, Order, Payment |
@@ -44,7 +44,7 @@ unrelated services start acting on requests meant for someone else.
 
 | Queue | Consumer | Subscribed topics | Filter policy (`messageType`) |
 |---|---|---|---|
-| `saga-inbox` | Saga | `inventory-events`, `payment-events`, `order-events` | Inventory: all reservation outcomes. Payment: `PaymentSucceeded`, `PaymentFailed`, `RefundSucceeded`, `RefundFailed`. Order: `OrderConfirmed`, `OrderCancelled` |
+| `saga-inbox` | Saga | `inventory-events`, `payment-events`, `order-events` | Inventory: all reservation outcomes and `InventoryReturned`. Payment: `PaymentSucceeded`, `PaymentFailed`, `RefundSucceeded`, `RefundFailed`. Order: `OrderConfirmed`, `OrderCancelled`, `OrderCancellationRequested` |
 | `notification-inbox` | Notification | `auth-events`, `order-events`, `payment-events`, `inventory-events` | Auth: `UserRegistered`, `UserEmailVerified`. Order: `OrderConfirmed`, `OrderCancelled`, `OrderStatusChanged`. Payment: `PaymentFailed`, `RefundSucceeded`. Inventory: `InventoryLowStock` |
 
 Subscriptions use **raw message delivery**, so the SQS body is exactly the

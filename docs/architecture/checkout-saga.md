@@ -36,6 +36,8 @@ stateDiagram-v2
     REFUNDING --> CANCELLED: RefundSucceeded + order cancelled
     REFUNDING --> MANUAL_REVIEW: RefundFailed after retries
     CANCELLING --> MANUAL_REVIEW: compensation not confirmed after retries
+    COMPLETED --> REFUNDING: OrderCancellationRequested (paid order cancelled)
+    REFUNDING --> REFUNDING: RefundSucceeded, waiting for InventoryReturned
     COMPLETED --> [*]
     CANCELLED --> [*]
     FAILED --> [*]
@@ -68,6 +70,29 @@ relay publishes only committed rows.
 `PROCESSING`, `SHIPPED` and `DELIVERED` are fulfillment states, set later by
 admin actions, outside the checkout saga.
 
+## Cancelling a paid order
+
+A customer (or an admin) may cancel a `CONFIRMED` or `PROCESSING` order, i.e. paid but not shipped.
+The Order Service moves it to `CANCELLATION_PENDING` and publishes `OrderCancellationRequested`. The
+**same checkout saga** takes it from there: every reply (from Payment, Inventory and Order) already
+carries its id, so routing, timeouts, retries and manual review are the ones described above.
+
+| Step | Saga sends | Waits for | Order status |
+|---|---|---|---|
+| 1 | `OrderStatusTransitionRequested(REFUND_PENDING)` + `RefundRequested` (full total, reason `CUSTOMER_REQUESTED` / `ADMIN`) | `RefundSucceeded` | `REFUND_PENDING` |
+| 2 | `OrderStatusTransitionRequested(REFUNDED)` + `InventoryReturnRequested` | `InventoryReturned` | `REFUNDED` |
+| 3 | — | — (saga `CANCELLED`, no `CheckoutFailed`: the checkout itself succeeded) | `REFUNDED` |
+
+- **Refund first, stock second.** If the refund fails (`RefundFailed`, or no answer after retries) the
+  saga goes to `MANUAL_REVIEW`, the order stays `REFUND_PENDING` and the stock stays committed, so a
+  human still has every option, including shipping after all.
+- `InventoryReturnRequested` moves the reservation `CONFIRMED → RETURNED` and puts its quantities back
+  `on_hand` (stock movement `RESERVATION_RETURNED`). Idempotent; a late duplicate confirm cannot deduct
+  the stock again.
+- Events are unordered: if `OrderCancellationRequested` overtakes `OrderConfirmed`, the saga announces
+  `CheckoutCompleted` and then cancels; the late `OrderConfirmed` is ignored.
+- A redelivered `PaymentSucceeded` after such a cancellation is **not** a late payment (no second refund).
+
 ## Failure handling
 
 | Failure | Detected by | Action |
@@ -78,6 +103,7 @@ admin actions, outside the checkout saga.
 | Customer never pays | Payment timeout (default 30 min, shorter than the reservation TTL of 45 min) | Ask Payment to expire the session. Then release and cancel. A late `PaymentSucceeded` after cancellation triggers `RefundRequested` |
 | Payment succeeds, confirm fails transiently | Command retry / redelivery | Retry with the same `idempotencyKey` and exponential backoff |
 | Payment succeeds, reservation expired | `InventoryReservationFailed{reason: RESERVATION_EXPIRED}` | Try to re-reserve. If stock is gone, `RefundRequested`, then order → `REFUND_PENDING` |
+| Paid order cancelled by the customer | `OrderCancellationRequested` | Refund, then order → `REFUNDED` and stock returned (see above) |
 | Refund fails or is unconfirmed | `RefundFailed` / timeout | Retry. Then `MANUAL_REVIEW` with `SagaManualReviewRequired` event and alert |
 | Saga process crashes mid-flow | On restart, the recovery job scans non-terminal sagas past their `nextActionAt` | Re-issue the pending step (idempotent) |
 | Duplicate message | `processed_messages` unique constraint | Acknowledge and skip |

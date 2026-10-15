@@ -25,7 +25,7 @@ locals {
   subscriptions = {
     "saga-inbox--inventory-events" = {
       queue = "saga-inbox", topic = "inventory-events"
-      types = ["InventoryReserved", "InventoryReservationFailed", "InventoryReservationConfirmed", "InventoryReservationReleased"]
+      types = ["InventoryReserved", "InventoryReservationFailed", "InventoryReservationConfirmed", "InventoryReservationReleased", "InventoryReturned"]
     }
     "saga-inbox--payment-events" = {
       queue = "saga-inbox", topic = "payment-events"
@@ -33,7 +33,7 @@ locals {
     }
     "saga-inbox--order-events" = {
       queue = "saga-inbox", topic = "order-events"
-      types = ["OrderConfirmed", "OrderCancelled"]
+      types = ["OrderConfirmed", "OrderCancelled", "OrderCancellationRequested"]
     }
     "notification-inbox--auth-events" = {
       queue = "notification-inbox", topic = "auth-events"
