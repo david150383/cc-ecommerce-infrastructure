@@ -60,8 +60,14 @@ One origin for the shop and its API: no CORS, and the refresh/CSRF cookies are f
      --secret-string file://payment.json        # {"DATABASE_URL": "...?sslmode=require", "STRIPE_SECRET_KEY": "sk_live_...", ...}
    shred -u payment.json
    ```
-   - `auth-service.JWT_SIGNING_KEYS`: `[{"kid": "2026-10-15", "pem": "<PKCS#8>"}]` (`npm run key:generate`
-     output); `SERVICE_CLIENTS`: the SHA-256 hashes of each client secret.
+   - `auth-service.JWT_SIGNING_KEYS`: `[{"kid": "...", "pem": "<PKCS#8>"}]`, built from a freshly generated key
+     (in `ecommerce-auth-service`, on a trusted machine):
+     ```bash
+     dir=$(mktemp -d) && JWT_KEYS_DIR=$dir npm run keys:generate
+     jq -n --arg kid "$(basename $dir/*.pem .pem)" --rawfile pem $dir/*.pem '[{kid: $kid, pem: $pem}]' > keys.json
+     rm -rf "$dir"   # then put keys.json into the secret's JWT_SIGNING_KEYS and shred it
+     ```
+     `SERVICE_CLIENTS`: the SHA-256 hashes of each client secret.
    - `SERVICE_CLIENT_SECRET` of order/payment/saga: the matching plaintext secrets (generate 32 random bytes).
    - `STRIPE_WEBHOOK_SECRET`: from the Stripe dashboard webhook endpoint
      `https://shop.example.com/api/v1/payments/webhooks/stripe`.
